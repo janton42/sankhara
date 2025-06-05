@@ -3,16 +3,15 @@ from noise import pnoise2
 import random
 
 from constants.config import (
-    MAP_WIDTH,
-    MAP_HEIGHT,
-    ELEVATION_NOISE,
-    MOISTURE_NOISE,
     ELEVATION_THRESHOLDS,
     MOISTURE_THRESHOLDS,
     RESOURCE_TYPES,
     BIOME_RESOURCE_BASELINES,
-    RESOURCE_VARIATION_PERCENTAGE
+    RESOURCE_VARIATION_PERCENTAGE,
+    ELEVATION_ABBR,
+    MOISTURE_ABBR,
 )
+
 
 def generate_perlin_noise(width, height, params):
     scale = params["scale"]
@@ -33,12 +32,14 @@ def generate_perlin_noise(width, height, params):
         for x in range(width)
     ])
 
+
 def normalize(array):
     min_val = np.min(array)
     max_val = np.max(array)
     if min_val == max_val:
         return np.zeros_like(array)
     return (array - min_val) / (max_val - min_val)
+
 
 def assign_biome(elevation, moisture):
     landform = ''
@@ -60,6 +61,7 @@ def assign_biome(elevation, moisture):
     biome = landform + ' ' + vegetation
     return biome
 
+
 def assign_resources(biome):
     base = BIOME_RESOURCE_BASELINES.get(biome, {})
     resources = {}
@@ -69,27 +71,9 @@ def assign_resources(biome):
         resources[res] = val + random.uniform(-variation, variation)
     return resources
 
-def generate_map():
-    elevation_noise = normalize(generate_perlin_noise(MAP_WIDTH, MAP_HEIGHT, ELEVATION_NOISE))
-    moisture_noise = normalize(generate_perlin_noise(MAP_WIDTH, MAP_HEIGHT, MOISTURE_NOISE))
-
-    game_map = []
-    for q in range(MAP_WIDTH):
-        col = []
-        for r in range(MAP_HEIGHT):
-            elev_val = elevation_noise[q][r]
-            moist_val = moisture_noise[q][r]
-            biome = assign_biome(elev_val, moist_val)
-            resources = assign_resources(biome)
-            tile = {
-                "q": q,
-                "r": r,
-                "elevation": elev_val,
-                "moisture": moist_val,
-                "biome": biome,
-                "resources": resources
-            }
-            col.append(tile)
-        game_map.append(col)
-
-    return game_map
+def map_biome_abbr(biome):
+    parts = biome.split(' ')
+    e = parts[0]
+    m = parts[-1]
+    abbr = ELEVATION_ABBR[e] + MOISTURE_ABBR[m]
+    return abbr

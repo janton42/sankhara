@@ -8,9 +8,10 @@ from unittest.mock import patch
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
 
+from core import game_engine
 from world import map_gen
 from constants.config import (MAP_WIDTH, MAP_HEIGHT, ELEVATION_NOISE, RESOURCE_TYPES, RESOURCE_VARIATION_PERCENTAGE,
-                              BIOME_RESOURCE_BASELINES)
+                              BIOME_RESOURCE_BASELINES, ELEVATION_ABBR, MOISTURE_ABBR)
 
 
 def test_generate_perlin_noise_output_shape():
@@ -57,13 +58,13 @@ def test_assign_biome_edge_values():
 
 
 def test_map_dimensions():
-    game_map = map_gen.generate_map()
-    assert len(game_map) == MAP_HEIGHT
-    assert all(len(row) == MAP_WIDTH for row in game_map)
+    game_map = game_engine.generate_map()
+    assert len(game_map[0]) == MAP_HEIGHT
+    assert len(game_map) == MAP_WIDTH
 
 
 def test_tile_structure():
-    game_map = map_gen.generate_map()
+    game_map = game_engine.generate_map()
     for row in game_map:
         for tile in row:
             assert 'biome' in tile
@@ -71,9 +72,14 @@ def test_tile_structure():
             assert 'resources' in tile
             assert isinstance(tile['resources'], dict)
 
+def test_map_biome_abbr():
+    assert map_gen.map_biome_abbr("Mountain Forest") == ELEVATION_ABBR['Mountain'] + MOISTURE_ABBR['Forest']
+    assert map_gen.map_biome_abbr("Lowland Saltflat") == ELEVATION_ABBR['Lowland'] + MOISTURE_ABBR['Saltflat']
+
+
 
 def test_resources_present():
-    game_map = map_gen.generate_map()
+    game_map = game_engine.generate_map()
     for row in game_map:
         for tile in row:
             for resource in RESOURCE_TYPES:
@@ -82,13 +88,13 @@ def test_resources_present():
 
 
 def test_map_size_matches_config():
-    game_map = map_gen.generate_map()
+    game_map = game_engine.generate_map()
     assert len(game_map) == MAP_WIDTH
     assert all(len(column) == MAP_HEIGHT for column in game_map)
 
 
 def test_all_tiles_have_coords():
-    game_map = map_gen.generate_map()
+    game_map = game_engine.generate_map()
     for col in game_map:
         for tile in col:
             assert "q" in tile and "r" in tile
@@ -97,7 +103,7 @@ def test_all_tiles_have_coords():
 
 
 def test_biome_is_valid():
-    game_map = map_gen.generate_map()
+    game_map = game_engine.generate_map()
     valid_biomes = {
         "Mountain Wetland", "Mountain Forest", "Mountain Shrubland", "Mountain Grassland", "Mountain Steppe",
         "Mountain Desert", "Mountain Saltflat",
@@ -120,7 +126,7 @@ def test_biome_is_valid():
 
 
 def test_resources_are_valid():
-    game_map = map_gen.generate_map()
+    game_map = game_engine.generate_map()
     for col in game_map:
         for tile in col:
             resources = tile["resources"]

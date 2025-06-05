@@ -1,11 +1,12 @@
 from kivy.uix.screenmanager import Screen
 from kivy.graphics import Color, Line, Rectangle
 from kivy.uix.widget import Widget
+from kivy.core.text import Label as CoreLabel
 from constants.config import (
     HEX_WIDTH, HEX_HEIGHT, HEX_HORIZONTAL_SPACING, HEX_VERTICAL_SPACING, HEX_ORIENTATION,
     HEX_EDGE_LENGTH, MAP_WIDTH, MAP_HEIGHT
 )
-from world.map_gen import generate_map
+from core.game_engine import generate_map
 
 class MapScreen(Screen):
     def __init__(self, **kwargs):
@@ -22,6 +23,17 @@ class MapScreen(Screen):
                 for r, tile in enumerate(col):
                     x, y = self.get_tile_position(q, r)
                     self.draw_hex(x, y)
+                    # Draw the abbreviation at the center of the hex
+                    abbr = tile.get("abbr", "")
+                    if abbr:
+                        label = CoreLabel(text=abbr, font_size=12)
+                        label.refresh()
+                        texture = label.texture
+                        Rectangle(
+                            texture=texture,
+                            pos=(x - texture.size[0] / 2, y - texture.size[1] / 2),
+                            size=texture.size
+                        )
 
     def draw_hex(self, x, y):
         Color(0, 1, 0) # RGB
