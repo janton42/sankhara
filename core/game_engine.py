@@ -1,43 +1,30 @@
-class GameWorld:
-    def __init__(self, game_map, player_state, turn_logic):
-        self.map = game_map
-        self.player_state = player_state
-        self.turn_logic = turn_logic
-
-    def update(self):
-        self.turn_logic.advance_turn(self)
-
-class GameMap:
-    def __init__(self, width, height, biome_generator):
-        self.width = width
-        self.height = height
-        self.tiles = self._generate_tiles(biome_generator)
-
-    def _generate_tiles(self, biome_generator):
-        return biome_generator.generate(self.width, self.height)
-
-    def get_tile(self, x, y):
-        return self.tiles[y][x]
-
-class TurnLogic:
-    def __init__(self):
-        self.current_turn = 0
-
-    def advance_turn(self, game_world):
-        self.current_turn += 1
-        self._update_systems(game_world)
-
-    def _update_systems(self, game_world):
-        # Placeholder for updating subsystems like AI, environment, etc.
-        pass
+from constants.config import ELEVATION_NOISE, MAP_HEIGHT, MAP_WIDTH, MOISTURE_NOISE
+from world.map_gen import assign_biome, assign_resources, generate_perlin_noise, normalize, map_biome_abbr
 
 
-class PlayerState:
-    def __init__(self, position, inventory=None, status=None):
-        self.position = position  # (x, y) tuple on the map
-        self.inventory = inventory if inventory else {}
-        self.status = status if status else {}
+def generate_map():
+    elevation_noise = normalize(generate_perlin_noise(MAP_WIDTH, MAP_HEIGHT, ELEVATION_NOISE))
+    moisture_noise = normalize(generate_perlin_noise(MAP_WIDTH, MAP_HEIGHT, MOISTURE_NOISE))
 
-    def move(self, dx, dy):
-        x, y = self.position
-        self.position = (x + dx, y + dy)
+    game_map = []
+    for q in range(MAP_WIDTH):
+        col = []
+        for r in range(MAP_HEIGHT):
+            elev_val = elevation_noise[q][r]
+            moist_val = moisture_noise[q][r]
+            biome = assign_biome(elev_val, moist_val)
+            abbr = map_biome_abbr(biome)
+            resources = assign_resources(biome)
+            tile = {
+                "q": q,
+                "r": r,
+                "elevation": elev_val,
+                "moisture": moist_val,
+                "biome": biome,
+                "abbr": abbr,
+                "resources": resources,
+            }
+            col.append(tile)
+        game_map.append(col)
+
+    return game_map
