@@ -1,8 +1,8 @@
 # Elevation noise controls terrain height variation
 ELEVATION_NOISE = {
-    "scale": 100.0,  # Typical range: 50–150; higher = broader features
-    "octaves": 5,  # Typical range: 4–6; more octaves = more detail
-    "persistence": 0.4,  # Typical range: 0.3–0.5; controls amplitude drop-off
+    "scale": 80.0,  # Typical range: 50–150; higher = broader features
+    "octaves": 4,  # Typical range: 4–6; more octaves = more detail
+    "persistence": 0.3,  # Typical range: 0.3–0.5; controls amplitude drop-off
     "lacunarity": 2.0,  # Typical range: ~2.0; controls frequency increase
     "seed": 42,
 }
@@ -428,6 +428,59 @@ BIOME_RESOURCE_BASELINES = {
 
 # Resource quantity variation range: +/- percentage to introduce randomness
 RESOURCE_VARIATION_PERCENTAGE = 0.15  # 15%
+
+# Biome color mapping for map display
+BIOME_COLORS = {
+    "Mountain Wetland": (0.5, 0.7, 1, 1),
+    "Mountain Forest": (0.4, 0.6, 0.3, 1),
+    "Mountain Shrubland": (0.7, 0.8, 0.5, 1),
+    "Mountain Grassland": (0.7, 1, 0.6, 1),
+    "Mountain Steppe": (0.9, 0.9, 0.5, 1),
+    "Mountain Desert": (0.95, 0.85, 0.6, 1),
+    "Mountain Saltflat": (1, 1, 0.9, 1),
+    "Highland Wetland": (0.5, 0.8, 1, 1),
+    "Highland Forest": (0.3, 0.7, 0.3, 1),
+    "Highland Shrubland": (0.7, 0.9, 0.5, 1),
+    "Highland Grassland": (0.7, 1, 0.7, 1),
+    "Highland Steppe": (0.9, 0.95, 0.5, 1),
+    "Highland Desert": (0.95, 0.9, 0.6, 1),
+    "Highland Saltflat": (1, 1, 0.95, 1),
+    "Hill Wetland": (0.5, 0.9, 1, 1),
+    "Hill Forest": (0.2, 0.8, 0.2, 1),
+    "Hill Shrubland": (0.8, 1, 0.6, 1),
+    "Hill Grassland": (0.8, 1, 0.8, 1),
+    "Hill Steppe": (0.95, 1, 0.5, 1),
+    "Hill Desert": (1, 0.95, 0.7, 1),
+    "Hill Saltflat": (1, 1, 1, 1),
+    "Plain Wetland": (0.6, 1, 1, 1),
+    "Plain Forest": (0.1, 0.9, 0.1, 1),
+    "Plain Shrubland": (0.9, 1, 0.7, 1),
+    "Plain Grassland": (0.9, 1, 0.9, 1),
+    "Plain Steppe": (1, 1, 0.6, 1),
+    "Plain Desert": (1, 1, 0.8, 1),
+    "Plain Saltflat": (1, 1, 1, 1),
+    "Valley Wetland": (0.7, 1, 1, 1),
+    "Valley Forest": (0.2, 1, 0.2, 1),
+    "Valley Shrubland": (1, 1, 0.8, 1),
+    "Valley Grassland": (1, 1, 1, 1),
+    "Valley Steppe": (1, 1, 0.7, 1),
+    "Valley Desert": (1, 1, 0.9, 1),
+    "Valley Saltflat": (1, 1, 1, 1),
+    "Basin Wetland": (0.8, 1, 1, 1),
+    "Basin Forest": (0.3, 1, 0.3, 1),
+    "Basin Shrubland": (1, 1, 0.9, 1),
+    "Basin Grassland": (1, 1, 1, 1),
+    "Basin Steppe": (1, 1, 0.8, 1),
+    "Basin Desert": (1, 1, 1, 1),
+    "Basin Saltflat": (1, 1, 1, 1),
+    "Lowland Wetland": (0.9, 1, 1, 1),
+    "Lowland Forest": (0.4, 1, 0.4, 1),
+    "Lowland Shrubland": (1, 1, 1, 1),
+    "Lowland Grassland": (1, 1, 1, 1),
+    "Lowland Steppe": (1, 1, 0.9, 1),
+    "Lowland Desert": (1, 1, 1, 1),
+    "Lowland Saltflat": (1, 1, 1, 1),
+}
 
 # Hex tile geometry constants
 

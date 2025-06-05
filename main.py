@@ -8,6 +8,7 @@ from kivy.uix.textinput import TextInput
 
 from ui.screens.map_view import MapScreen
 from kivy.uix.floatlayout import FloatLayout
+from ui.screens.info_panel import format_tile_info
 
 class MainScreen(BoxLayout):
     def __init__(self, **kwargs):
@@ -21,7 +22,7 @@ class MainScreen(BoxLayout):
         self.text_input.bind(text=self.on_text)
 
         self.right_panel = BoxLayout(orientation='vertical', size_hint=(0.6, 1))
-        self.map_screen = MapScreen()
+        self.map_screen = MapScreen(on_tile_selected_callback=self.on_tile_selected)
         self.render_button = Button(text="Render Map", size_hint=(1, 0.1))
         self.render_button.bind(on_press=self.on_render_map)
 
@@ -43,6 +44,11 @@ class MainScreen(BoxLayout):
 
     def on_text(self, instance, value):
         print('The widget', instance, 'have:', value)
+
+    def on_tile_selected(self, tile):
+        # Update the left panel with tile info
+        info = format_tile_info(tile)
+        self.left_panel.text = info
 
 class SankharaApp(App):
     def build(self):

@@ -4,17 +4,19 @@ from kivy.uix.widget import Widget
 from kivy.core.text import Label as CoreLabel
 from constants.config import (
     HEX_WIDTH, HEX_HEIGHT, HEX_HORIZONTAL_SPACING, HEX_VERTICAL_SPACING, HEX_ORIENTATION,
-    HEX_EDGE_LENGTH, MAP_WIDTH, MAP_HEIGHT
+    HEX_EDGE_LENGTH, MAP_WIDTH, MAP_HEIGHT, BIOME_COLORS
 )
 from core.game_engine import generate_map
 
 class MapScreen(Screen):
-    def __init__(self, **kwargs):
+    def __init__(self, on_tile_selected_callback=None, **kwargs):
         super().__init__(**kwargs)
         self.map_data = generate_map()
         self.canvas_widget = Widget()
         self.add_widget(self.canvas_widget)
         self.draw_map()
+        self.canvas_widget.bind(on_touch_down=self.on_map_touch)
+        self.on_tile_selected_callback = on_tile_selected_callback
 
     def draw_map(self):
         self.canvas_widget.canvas.clear()
@@ -22,7 +24,10 @@ class MapScreen(Screen):
             for q, col in enumerate(self.map_data):
                 for r, tile in enumerate(col):
                     x, y = self.get_tile_position(q, r)
-                    self.draw_hex(x, y)
+                    biome = tile.get("biome", "")
+                    # color = (1,1,1,1)
+                    color = BIOME_COLORS.get(biome, (1, 1, 1, 1))
+                    self.draw_hex(x, y, color)
                     # Draw the abbreviation at the center of the hex
                     abbr = tile.get("abbr", "")
                     if abbr:
@@ -35,8 +40,8 @@ class MapScreen(Screen):
                             size=texture.size
                         )
 
-    def draw_hex(self, x, y):
-        Color(0, 1, 0) # RGB
+    def draw_hex(self, x, y, color):
+        Color(*color)
         Line(points=self.hex_points(x, y), width=1)
 
     def get_tile_position(self, q, r):
@@ -62,3 +67,24 @@ class MapScreen(Screen):
         center_q = MAP_WIDTH // 2
         center_r = MAP_HEIGHT // 2
         return self.get_tile_position(center_q, center_r)
+
+    def on_map_touch(self, widget, touch):
+        # Convert touch coordinates to tile indices (q, r)
+        q, r = self.pixel_to_hex(touch.x, touch.y)
+        if 0 <= q < MAP_WIDTH and 0 <= r < MAP_HEIGHT:
+            tile = self.map_data[q][r]
+            self.on_tile_selected(tile)
+
+    def pixel_to_hex(self, x, y):
+        # Only works for pointy-top hexes
+        # Approximate conversion from pixel to axial coordinates
+        q = int(round(x / HEX_HORIZONTAL_SPACING))
+        r = int(round((y - (q % 2) * (HEX_VERTICAL_SPACING / 2)) / HEX_VERTICAL_SPACING))
+        return q, r
+
+    def on_tile_selected(self, tile):
+        # Call the callback if provided
+        if self.on_tile_selected_callback:
+            self.on_tile_selected_callback(tile)
+        else:
+            print(f"Tile selected: {tile}")
