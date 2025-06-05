@@ -7,8 +7,8 @@ ELEVATION_NOISE = {
     "seed": 42,
 }
 
-MAP_WIDTH = 30
-MAP_HEIGHT = 30
+MAP_WIDTH = 24
+MAP_HEIGHT = 6
 
 # Moisture noise controls humidity variation across the map
 MOISTURE_NOISE = {
@@ -411,15 +411,15 @@ RESOURCE_VARIATION_PERCENTAGE = 0.15  # 15%
 # Hex tile geometry constants
 
 # Length of one edge of the hex tile (radius)
-HEX_EDGE_LENGTH = 10  # example value, adjust as needed
+HEX_EDGE_LENGTH = 25  # example value, adjust as needed
 
 # Derived dimensions for convenience
 HEX_WIDTH = 2 * HEX_EDGE_LENGTH  # width of the hex tile
 HEX_HEIGHT = (3 ** 0.5) * HEX_EDGE_LENGTH  # height of the hex tile (height of an equilateral triangle times 2)
 
 # Spacing between hex tile centers (depends on orientation)
-HEX_HORIZONTAL_SPACING = HEX_WIDTH * 0.75  # distance between centers horizontally for pointy-top hex
-HEX_VERTICAL_SPACING = HEX_HEIGHT  # vertical distance between centers for pointy-top hex
+HEX_HORIZONTAL_SPACING = HEX_WIDTH * 0.44 # distance between centers horizontally for pointy-top hex
+HEX_VERTICAL_SPACING = HEX_HEIGHT * 1.79 # vertical distance between centers for pointy-top hex
 
 # Hex orientation: 'pointy' or 'flat'
 HEX_ORIENTATION = 'pointy'  # choose 'pointy' for pointy-top hexagons

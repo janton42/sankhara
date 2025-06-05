@@ -1,10 +1,14 @@
 from kivy.app import App
+from kivy.graphics import Color, Rectangle
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.label import Label
 from kivy.uix.button import Button
 from kivy.core.window import Window
 from kivy.uix.textinput import TextInput
-from ui.screens.map_view import MapScreen  # assuming your MapScreen class is here
+
+from constants.config import MAP_WIDTH, MAP_HEIGHT, HEX_HORIZONTAL_SPACING, HEX_WIDTH, HEX_HEIGHT, HEX_VERTICAL_SPACING
+from ui.screens.map_view import MapScreen
+from kivy.uix.floatlayout import FloatLayout
 
 class MainScreen(BoxLayout):
     def __init__(self, **kwargs):
@@ -23,8 +27,16 @@ class MainScreen(BoxLayout):
         self.render_button.bind(on_press=self.on_render_map)
 
         self.right_panel.add_widget(self.render_button)
-        self.right_panel.add_widget(self.map_screen)
-
+        map_container = FloatLayout(size_hint=(1, 0.9))
+        with map_container.canvas.before:
+            Color(0.9, 1, 0.8, 0.5)  # Light green, semi-transparent
+            self.map_bg = Rectangle(pos=map_container.pos, size=map_container.size)
+        map_container.bind(pos=lambda w, v: setattr(self.map_bg, 'pos', v),
+                           size=lambda w, v: setattr(self.map_bg, 'size', v))
+        self.map_screen.size_hint = (0.8, 0.8)
+        self.map_screen.pos_hint = {'center_x': 0.5, 'center_y': 0.5}
+        map_container.add_widget(self.map_screen)
+        self.right_panel.add_widget(map_container)
         self.add_widget(self.right_panel)
 
     def on_render_map(self, instance):
@@ -40,4 +52,3 @@ class SankharaApp(App):
 
 if __name__ == '__main__':
     SankharaApp().run()
-
