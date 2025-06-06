@@ -79,6 +79,28 @@ RESOURCE_TYPES = [
     "fuel_sources"
 ]
 
+# Resource regeneration rates per turn (as a fraction of max, for renewables)
+RESOURCE_REGENERATION = {
+    "fresh_water": 0.10,        # 10% of max per turn (example)
+    "salt_water": 0.10,         # 10% of max per turn (example)
+    "plant_food": 0.05,         # 5% of max per turn (example)
+    "animal_food": 0.03,        # 3% of max per turn (example)
+    "shelter_materials": 0.02,  # 2% of max per turn (example)
+    "tool_materials": 0.0,      # Non-renewable (example)
+    "fuel_sources": 0.01,       # 1% of max per turn (example)
+}
+
+# Resource renewability classification
+RESOURCE_RENEWABLE = {
+    "fresh_water": True,
+    "salt_water": True,
+    "plant_food": True,
+    "animal_food": True,
+    "shelter_materials": True,
+    "tool_materials": False,
+    "fuel_sources": False,  # Set to True if some are renewable (e.g., wood); adjust as needed
+}
+
 # Baseline resource quantities per biome (values can be adjusted later)
 # Each resource is a float between 0.0 and 1.0 representing abundance
 BIOME_RESOURCE_BASELINES = {
