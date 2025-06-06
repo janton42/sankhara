@@ -528,7 +528,10 @@ ACTIONS = [
         "repeatable": False,
         "required": True,
         "skippable": True,
-        "penalty_on_skip": {"health": -10},
+        "skip_limit": 3,  # Max times sleep can be skipped consecutively
+        "penalty_on_skip": {"health": -10, "karma": -0.2},
+        "karma": 0.1,
+        "health": 10,  # Health gained if taken
         "description": "Rest and recover. Skipping reduces health."
     },
     {
@@ -538,7 +541,10 @@ ACTIONS = [
         "repeatable": False,
         "required": True,
         "skippable": True,
-        "penalty_on_skip": {"health": -8},
+        "skip_limit": 2,  # Max times eating/drinking can be skipped consecutively
+        "penalty_on_skip": {"health": -8, "karma": -0.2},
+        "karma": 0.1,
+        "health": 8,  # Health gained if taken
         "description": "Consume food and water. Skipping reduces health."
     },
     {
@@ -548,7 +554,10 @@ ACTIONS = [
         "repeatable": True,
         "required": False,
         "skippable": False,
+        "skip_limit": None,
         "penalty_on_skip": None,
+        "karma": -0.05,
+        "health": 0,
         "description": "Collect food, water, or materials."
     },
     {
@@ -558,7 +567,10 @@ ACTIONS = [
         "repeatable": True,
         "required": False,
         "skippable": True,
-        "penalty_on_skip": None,
+        "skip_limit": 5,  # Meditation can be skipped more often
+        "penalty_on_skip": {"health": 0, "karma": -0.1},
+        "karma": 0.2,
+        "health": 2,
         "description": "Increase happiness and reduce stress."
     }
 ]

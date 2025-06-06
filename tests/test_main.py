@@ -30,8 +30,6 @@ from main import MainScreen
 
 def test_main_screen_init():
     screen = MainScreen()
-    assert isinstance(screen.left_panel, Label)
-    assert isinstance(screen.text_input, TextInput)
     assert isinstance(screen.right_panel, BoxLayout)
     assert isinstance(screen.map_screen, DummyMapScreen)
     assert isinstance(screen.render_button, Button)
@@ -40,12 +38,6 @@ def test_on_render_map_triggers_draw():
     screen = MainScreen()
     screen.on_render_map(None)
     assert screen.map_screen.draw_map_called
-
-def test_on_text_prints(capsys):
-    screen = MainScreen()
-    screen.on_text(screen.text_input, "hello")
-    captured = capsys.readouterr()
-    assert "hello" in captured.out
 
 def test_on_tile_selected_updates_panel():
     screen = MainScreen()

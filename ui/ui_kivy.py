@@ -7,6 +7,7 @@ from entities.player_state import PlayerState
 from entities.lineage import Family
 from ui.screens.info_panel import format_tile_info
 from constants.config import ACTIONS
+from core.turn_manager import regenerate_resources, process_player_actions
 
 class InfoPanel(BoxLayout):
     def __init__(self, **kwargs):
@@ -94,9 +95,18 @@ class InfoPanel(BoxLayout):
                 if not self.selected_actions[i]:
                     main_button.disabled = True
 
+    def set_game_map(self, game_map):
+        self.game_map = game_map
+
     def on_take_action(self, instance):
         self.turn += 1
         self.turn_label.text = f"Turn: {self.turn}"
+        # Get selected action IDs
+        actions_taken = [a["id"] for a in self.selected_actions if a]
+        # Apply resource regeneration and player action effects
+        if hasattr(self, 'game_map') and self.player:
+            regenerate_resources(self.game_map)
+            process_player_actions(self.player, actions_taken)
         # Print the selected choices under their respective button, then reset buttons
         for i, (main_button, dropdown, label) in enumerate(self.action_dropdowns):
             label.text = main_button.text
@@ -105,15 +115,17 @@ class InfoPanel(BoxLayout):
             self.selected_actions[i] = None
             self.populate_dropdown(dropdown, main_button, i)
         self.update_dropdown_states()
+        # Update player info display
+        self.player_label.text = self.format_player_info()
 
     def format_player_info(self):
         if not self.player:
             return "Player: Not started"
         s = self.player.state
         return (f"Player\n"
-                f"Species: {s.species}          Age: {s.age}\n"
-                f"Health: {s.health}            Happiness: {s.happiness}\n"
-                f"Family: {self.player.family.name}     Karma: {self.player.karma}\n"
+                f"Species: {s.species}  Age: {s.age}\n"
+                f"Health: {s.health}    Happiness: {s.happiness}\n"
+                f"Family: {self.player.family.name} Karma: {self.player.karma}\n"
                 )
 
     def update_tile_info(self, tile):

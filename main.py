@@ -6,17 +6,24 @@ from kivy.uix.floatlayout import FloatLayout
 
 from ui.screens.map_view import MapScreen
 from ui.ui_kivy import InfoPanel
+from core.turn_manager import regenerate_resources, process_player_actions
 
 class MainScreen(BoxLayout):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.orientation = 'horizontal'
 
+        # Generate and store the game map at the top level
+        from core.game_engine import generate_map
+        self.game_map = generate_map()
+
         self.left_panel = InfoPanel(size_hint=(0.4, 1))
+        self.left_panel.set_game_map(self.game_map)  # Pass map to InfoPanel
         self.add_widget(self.left_panel)
 
         self.right_panel = BoxLayout(orientation='vertical', size_hint=(0.6, 1))
         self.map_screen = MapScreen(on_tile_selected_callback=self.on_tile_selected)
+        self.map_screen.map_data = self.game_map  # Use the shared map
         self.render_button = Button(text="Render Map", size_hint=(1, 0.1))
         self.render_button.bind(on_press=self.on_render_map)
 
