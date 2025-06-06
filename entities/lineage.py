@@ -3,6 +3,7 @@ from typing import List, Dict, Tuple, Optional
 class Family:
     def __init__(self, family_id: str, tribe: Optional[str] = None):
         self.family_id = family_id              # Unique family identifier
+        self.name = "Smithsonians"
         self.tribe = tribe                     # Reference to tribe (string or object)
         self.members: List[str] = []           # List of member IDs (Player, NPC, or data dicts)
         # Relations: e.g., {('parent', 'child'): [(id1, id2), ...], ('spouse',): [(id3, id4), ...]}

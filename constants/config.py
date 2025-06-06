@@ -519,3 +519,47 @@ HEX_VERTICAL_SPACING = HEX_HEIGHT * 1.79  # vertical distance between centers fo
 
 # Hex orientation: 'pointy' or 'flat'
 HEX_ORIENTATION = 'pointy'  # choose 'pointy' for pointy-top hexagons
+
+ACTIONS = [
+    {
+        "id": "sleep",
+        "name": "Sleep",
+        "hours": 6,
+        "repeatable": False,
+        "required": True,
+        "skippable": True,
+        "penalty_on_skip": {"health": -10},
+        "description": "Rest and recover. Skipping reduces health."
+    },
+    {
+        "id": "eat_and_drink",
+        "name": "Eat and Drink",
+        "hours": 4,
+        "repeatable": False,
+        "required": True,
+        "skippable": True,
+        "penalty_on_skip": {"health": -8},
+        "description": "Consume food and water. Skipping reduces health."
+    },
+    {
+        "id": "gather_resources",
+        "name": "Gather Resources",
+        "hours": 4,
+        "repeatable": True,
+        "required": False,
+        "skippable": False,
+        "penalty_on_skip": None,
+        "description": "Collect food, water, or materials."
+    },
+    {
+        "id": "meditate",
+        "name": "Meditate",
+        "hours": 4,
+        "repeatable": True,
+        "required": False,
+        "skippable": True,
+        "penalty_on_skip": None,
+        "description": "Increase happiness and reduce stress."
+    }
+]
+
