@@ -2,7 +2,6 @@
 import sys
 import os
 import unittest
-import random
 import numpy as np
 from unittest.mock import patch
 
@@ -55,6 +54,19 @@ def test_assign_biome_valid_combinations():
 def test_assign_biome_edge_values():
     assert map_gen.assign_biome(0.90, 0.90) == "Mountain Forest"
     assert map_gen.assign_biome(0.30, 0.30) == "Valley Desert"
+
+
+def test_assign_biome_empty_string_cases():
+    # Elevation and moisture values outside all thresholds
+    # Should return 'Not Hotdog Not Hotdog'
+    assert map_gen.assign_biome(-0.5, -0.5) == 'Not Hotdog Not Hotdog'
+    assert map_gen.assign_biome(2.0, 2.0) == 'Not Hotdog Not Hotdog'
+    # Only elevation out of range
+    assert map_gen.assign_biome(-0.5, 0.5) == 'Not Hotdog Grassland'
+    assert map_gen.assign_biome(2.0, 0.5) == 'Not Hotdog Grassland'
+    # Only moisture out of range
+    assert map_gen.assign_biome(0.5, -0.5) == 'Plain Not Hotdog'
+    assert map_gen.assign_biome(0.5, 2.0) == 'Plain Not Hotdog'
 
 
 def test_map_dimensions():
