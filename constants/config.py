@@ -568,7 +568,7 @@ ACTIONS = [
         "required": False,
         "skippable": True,
         "skip_limit": 5,  # Meditation can be skipped more often
-        "penalty_on_skip": {"health": 0, "karma": -0.1},
+        "penalty_on_skip": {"health": 1, "karma": -0.1},
         "karma": 0.2,
         "health": 2,
         "description": "Increase happiness and reduce stress."
