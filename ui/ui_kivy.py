@@ -2,6 +2,7 @@ from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
 from kivy.uix.label import Label
 from kivy.uix.dropdown import DropDown
+from kivy.app import App
 from entities.player import Player
 from entities.player_state import PlayerState
 from entities.lineage import Family
@@ -117,6 +118,11 @@ class InfoPanel(BoxLayout):
         self.update_dropdown_states()
         # Update player info display
         self.player_label.text = self.format_player_info()
+        # Game over check
+        if self.player and self.player.state.health <= 0:
+            app = App.get_running_app()
+            if hasattr(app, 'game_over'):
+                app.game_over()
 
     def format_player_info(self):
         if not self.player:
