@@ -6,29 +6,27 @@ from constants.config import (
     HEX_WIDTH, HEX_HEIGHT, HEX_HORIZONTAL_SPACING, HEX_VERTICAL_SPACING, HEX_ORIENTATION,
     HEX_EDGE_LENGTH, MAP_WIDTH, MAP_HEIGHT, BIOME_COLORS
 )
-from core.game_engine import generate_map
 
 class MapScreen(Screen):
     def __init__(self, on_tile_selected_callback=None, **kwargs):
         super().__init__(**kwargs)
-        self.map_data = generate_map()
+        self.map_data = None  # Will be set externally
         self.canvas_widget = Widget()
         self.add_widget(self.canvas_widget)
-        self.draw_map()
         self.canvas_widget.bind(on_touch_down=self.on_map_touch)
         self.on_tile_selected_callback = on_tile_selected_callback
 
     def draw_map(self):
+        if self.map_data is None:
+            return
         self.canvas_widget.canvas.clear()
         with self.canvas_widget.canvas:
             for q, col in enumerate(self.map_data):
                 for r, tile in enumerate(col):
                     x, y = self.get_tile_position(q, r)
                     biome = tile.get("biome", "")
-                    # color = (1,1,1,1)
                     color = BIOME_COLORS.get(biome, (1, 1, 1, 1))
                     self.draw_hex(x, y, color)
-                    # Draw the abbreviation at the center of the hex
                     abbr = tile.get("abbr", "")
                     if abbr:
                         label = CoreLabel(text=abbr, font_size=12)

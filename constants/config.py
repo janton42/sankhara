@@ -575,3 +575,69 @@ ACTIONS = [
     }
 ]
 
+CULTURE_GROUPS = {
+    "Mountain": {
+        "language_family": "Altaic",
+        "male_stems": ["kar", "tan", "mor", "bel", "sar", "dur", "alt", "tem", "bol", "nur"],
+        "female_stems": ["bel", "sar", "nur", "tem", "alt", "gul", "zol", "mel", "nay", "jin"],
+        "male_suffixes": ["-ov", "-en", "-ar", "-ik", "-an", "-bek", "-tur", "-ash", "-jin"],
+        "female_suffixes": ["-gul", "-ash", "-jin", "-nur", "-sen", "-bai", "-tem", "-yar", "-zel"],
+        "last_stems": ["tog", "erk", "zan", "bul", "ket", "nur", "dal", "yurt", "tem"],
+        "last_suffixes": ["-bay", "-dur", "-bek", "-gan", "-teg", "-sum", "-jin", "-tar", "-gul"]
+    },
+    "Highland": {
+        "language_family": "Dravidian",
+        "male_stems": ["thar", "mal", "var", "raj", "kan", "sel", "pon", "kum", "mur", "nall"],
+        "female_stems": ["sel", "pon", "kum", "nall", "lal", "kam", "nila", "sri", "vana", "mala"],
+        "male_suffixes": ["-an", "-ar", "-in", "-u", "-am", "-than", "-vel", "-kum", "-ram"],
+        "female_suffixes": ["-i", "-a", "-am", "-ini", "-eswari", "-latha", "-vani", "-priya", "-shree"],
+        "last_stems": ["mani", "thiru", "arun", "kavi", "ravi", "sund", "pavi", "vel"],
+        "last_suffixes": ["-nath", "-esan", "-kumar", "-vadi", "-selvan", "-rayan", "-appan", "-muthu"]
+    },
+    "Hill": {
+        "language_family": "Niger-Congo",
+        "male_stems": ["bala", "kofi", "daka", "nko", "mba", "goma", "luba", "tunde", "tembo", "juma"],
+        "female_stems": ["zuba", "tala", "seka", "luba", "nala", "ama", "binta", "sade", "zola", "fola"],
+        "male_suffixes": ["-la", "-ko", "-ta", "-no", "-ba", "-ji", "-me", "-mu", "-do"],
+        "female_suffixes": ["-lu", "-na", "-ji", "-ba", "-ka", "-sa", "-we", "-mi", "-yo"],
+        "last_stems": ["kwame", "chidi", "zuba", "tembo", "bayo", "okon", "juma", "yaro"],
+        "last_suffixes": ["-bwe", "-ngo", "-tunde", "-diko", "-lami", "-fari", "-soro", "-luba"]
+    },
+    "Plain": {
+        "language_family": "Indo-European",
+        "male_stems": ["al", "ber", "vin", "dom", "mar", "lor", "sten", "rol", "dra", "garr"],
+        "female_stems": ["cel", "dra", "lor", "mar", "ela", "ina", "rosa", "tara", "nora", "lynn"],
+        "male_suffixes": ["-son", "-man", "-berg", "-ski", "-strom", "-ich", "-gaard", "-hart"],
+        "female_suffixes": ["-dottir", "-ley", "-lin", "-ette", "-ine", "-elle", "-a", "-ie"],
+        "last_stems": ["stan", "garr", "thor", "eld", "wulf", "grim", "frey", "hald"],
+        "last_suffixes": ["-stone", "-croft", "-ridge", "-ward", "-holm", "-hall", "-burn", "-well"]
+    },
+    "Valley": {
+        "language_family": "Afro-Asiatic",
+        "male_stems": ["hab", "sal", "tan", "mur", "kah", "bar", "nas", "jab", "ram", "zid"],
+        "female_stems": ["zam", "meh", "rim", "nas", "lay", "hana", "safa", "nura", "hiba", "mari"],
+        "male_suffixes": ["-i", "-an", "-el", "-et", "-am", "-oun", "-ir", "-zem", "-al"],
+        "female_suffixes": ["-a", "-ah", "-iya", "-een", "-et", "-un", "-is", "-in", "-ara"],
+        "last_stems": ["zahir", "amin", "far", "jab", "sam", "naz", "rami", "kal"],
+        "last_suffixes": ["-allah", "-bar", "-zad", "-oud", "-mir", "-sim", "-bari", "-qam"]
+    },
+    "Basin": {
+        "language_family": "Austronesian",
+        "male_stems": ["lan", "tal", "san", "bal", "kan", "toa", "riki", "tama", "matu", "nalu"],
+        "female_stems": ["nur", "lim", "toa", "sina", "lani", "mele", "hana", "leia", "miri", "tiva"],
+        "male_suffixes": ["-an", "-un", "-in", "-ar", "-ki", "-mo", "-sa", "-o"],
+        "female_suffixes": ["-el", "-lu", "-ti", "-na", "-ia", "-ra", "-me", "-ni", "-hi"],
+        "last_stems": ["mana", "ratu", "lani", "tama", "koro", "sina", "tavi", "hoku"],
+        "last_suffixes": ["-lani", "-hiva", "-kiri", "-tonga", "-riki", "-puna", "-nui", "-lua"]
+    },
+    "Lowland": {
+        "language_family": "Sino-Tibetan",
+        "male_stems": ["ming", "shan", "lei", "jun", "bo", "tian", "lin", "han", "gao", "xu"],
+        "female_stems": ["hua", "zhen", "yue", "mei", "li", "lan", "xin", "feng", "xiu", "qi"],
+        "male_suffixes": ["-li", "-wen", "-shan", "-kai", "-long", "-zhao", "-qin", "-hu"],
+        "female_suffixes": ["-hua", "-jie", "-mei", "-xiu", "-lin", "-fang", "-na", "-yan"],
+        "last_stems": ["zhang", "gao", "luo", "han", "cheng", "yang", "xu", "pei"],
+        "last_suffixes": ["-fang", "-dong", "-quan", "-bo", "-xun", "-yi", "-zong", "-hai"]
+    },
+}
+

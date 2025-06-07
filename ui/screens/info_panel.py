@@ -3,6 +3,7 @@ def format_tile_info(tile):
     if not tile:
         return "No tile selected."
     lines = [
+        f"Tile ID: {tile.get('id')}\n"
         f"Coordinates: ({tile.get('q')}, {tile.get('r')})",
         f"Biome: {tile.get('biome', 'Unknown')} ({tile.get('abbr', '')})",
         f"Elevation: {tile.get('elevation', 0):.2f}",
