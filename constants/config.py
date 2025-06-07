@@ -519,3 +519,59 @@ HEX_VERTICAL_SPACING = HEX_HEIGHT * 1.79  # vertical distance between centers fo
 
 # Hex orientation: 'pointy' or 'flat'
 HEX_ORIENTATION = 'pointy'  # choose 'pointy' for pointy-top hexagons
+
+ACTIONS = [
+    {
+        "id": "sleep",
+        "name": "Sleep",
+        "hours": 6,
+        "repeatable": False,
+        "required": True,
+        "skippable": True,
+        "skip_limit": 3,  # Max times sleep can be skipped consecutively
+        "penalty_on_skip": {"health": -10, "karma": -0.2},
+        "karma": 0.1,
+        "health": 10,  # Health gained if taken
+        "description": "Rest and recover. Skipping reduces health."
+    },
+    {
+        "id": "eat_and_drink",
+        "name": "Eat and Drink",
+        "hours": 4,
+        "repeatable": False,
+        "required": True,
+        "skippable": True,
+        "skip_limit": 2,  # Max times eating/drinking can be skipped consecutively
+        "penalty_on_skip": {"health": -8, "karma": -0.2},
+        "karma": 0.1,
+        "health": 8,  # Health gained if taken
+        "description": "Consume food and water. Skipping reduces health."
+    },
+    {
+        "id": "gather_resources",
+        "name": "Gather Resources",
+        "hours": 4,
+        "repeatable": True,
+        "required": False,
+        "skippable": False,
+        "skip_limit": None,
+        "penalty_on_skip": None,
+        "karma": -0.05,
+        "health": 0,
+        "description": "Collect food, water, or materials."
+    },
+    {
+        "id": "meditate",
+        "name": "Meditate",
+        "hours": 4,
+        "repeatable": True,
+        "required": False,
+        "skippable": True,
+        "skip_limit": 5,  # Meditation can be skipped more often
+        "penalty_on_skip": {"health": 1, "karma": -0.1},
+        "karma": 0.2,
+        "health": 2,
+        "description": "Increase happiness and reduce stress."
+    }
+]
+
