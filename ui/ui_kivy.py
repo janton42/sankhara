@@ -1,7 +1,9 @@
+import random
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
 from kivy.uix.label import Label
 from kivy.uix.dropdown import DropDown
+from kivy.app import App
 from entities.player import Player
 from entities.player_state import PlayerState
 from entities.lineage import Family
@@ -23,7 +25,7 @@ class InfoPanel(BoxLayout):
         self.add_widget(self.turn_label, index=1)  # Add just below the top spacer
         self.player_label = Label(text="Player: Not started", size_hint_y=None, height=80)
         self.start_button = Button(text="Start Game", size_hint_y=None, height=40)
-        self.start_button.bind(on_press=self.on_start_game)
+        self.start_button.bind(on_press=self.on_start_game_wrapper)
         # Action dropdowns
         self.action_box = BoxLayout(orientation='horizontal', size_hint_y=None, height=60, spacing=0)
         self.action_dropdowns = []
@@ -57,13 +59,24 @@ class InfoPanel(BoxLayout):
             btn.bind(on_release=lambda btn, mb=main_button, dd=dropdown, i=idx: self.select_action(btn, mb, dd, i))
             dropdown.add_widget(btn)
 
-    def on_start_game(self, instance):
-        family = Family(family_id="fam1")
+    def on_start_game_wrapper(self, instance):
+        # Pick a random tile from the map
+        if not hasattr(self, 'game_map') or not self.game_map:
+            return
+        flat_tiles = [tile for col in self.game_map for tile in col]
+        tile = random.choice(flat_tiles)
+        self.on_start_game(instance, tile)
+
+    def on_start_game(self, instance, tile):
+        family = Family(family_id="fam1", start_tile=tile)
+        family.set_family_name()
         state = PlayerState()
         self.player = Player(player_id="p1", family=family, state=state)
+        self.player.set_player_gender()
+        self.player.set_player_name()
         self.player_label.text = self.format_player_info()
         self.start_button.text = "Take Action"
-        self.start_button.unbind(on_press=self.on_start_game)
+        self.start_button.unbind(on_press=self.on_start_game_wrapper)
         self.start_button.bind(on_press=self.on_take_action)
         # Enable action dropdowns
         for i, (main_button, _, _) in enumerate(self.action_dropdowns):
@@ -101,13 +114,10 @@ class InfoPanel(BoxLayout):
     def on_take_action(self, instance):
         self.turn += 1
         self.turn_label.text = f"Turn: {self.turn}"
-        # Get selected action IDs
         actions_taken = [a["id"] for a in self.selected_actions if a]
-        # Apply resource regeneration and player action effects
         if hasattr(self, 'game_map') and self.player:
             regenerate_resources(self.game_map)
             process_player_actions(self.player, actions_taken)
-        # Print the selected choices under their respective button, then reset buttons
         for i, (main_button, dropdown, label) in enumerate(self.action_dropdowns):
             label.text = main_button.text
             main_button.text = f"Action {i+1}"
@@ -115,14 +125,18 @@ class InfoPanel(BoxLayout):
             self.selected_actions[i] = None
             self.populate_dropdown(dropdown, main_button, i)
         self.update_dropdown_states()
-        # Update player info display
+        # Always update player info after actions
         self.player_label.text = self.format_player_info()
+        if self.player and self.player.state.health <= 0:
+            app = App.get_running_app()
+            if hasattr(app, 'game_over'):
+                app.game_over()
 
     def format_player_info(self):
         if not self.player:
             return "Player: Not started"
         s = self.player.state
-        return (f"Player\n"
+        return (f"Player: {self.player.name}\n"
                 f"Species: {s.species}  Age: {s.age}\n"
                 f"Health: {s.health}    Happiness: {s.happiness}\n"
                 f"Family: {self.player.family.name} Karma: {self.player.karma}\n"
