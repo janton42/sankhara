@@ -27,16 +27,16 @@ class MapScreen(Screen):
                     biome = tile.get("biome", "")
                     color = BIOME_COLORS.get(biome, (1, 1, 1, 1))
                     self.draw_hex(x, y, color)
-                    abbr = tile.get("abbr", "")
-                    if abbr:
-                        label = CoreLabel(text=abbr, font_size=12)
-                        label.refresh()
-                        texture = label.texture
-                        Rectangle(
-                            texture=texture,
-                            pos=(x - texture.size[0] / 2, y - texture.size[1] / 2),
-                            size=texture.size
-                        )
+                    # abbr = tile.get("abbr", "")
+                    # if abbr:
+                    #     label = CoreLabel(text=abbr, font_size=12)
+                    #     label.refresh()
+                    #     texture = label.texture
+                    #     Rectangle(
+                    #         texture=texture,
+                    #         pos=(x - texture.size[0] / 2, y - texture.size[1] / 2),
+                    #         size=texture.size
+                    #     )
 
     def draw_hex(self, x, y, color):
         Color(*color)
