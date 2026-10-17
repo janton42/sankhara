@@ -120,6 +120,7 @@ class Nation:
     insight: dict[str, float] = field(default_factory=dict)  # discovery id -> progress
     succession: str = "respected"  # how a new leader is found
     names: dict[str, str] = field(default_factory=dict)  # display names: categories, titles
+    settled_in: dict[str, int] = field(default_factory=dict)  # discovery id -> year settled
 
 
 @dataclass
@@ -202,6 +203,7 @@ class GameState:
     modifiers: dict[str, float] = field(default_factory=dict)  # this year's world effects
     pending_choice: str | None = None  # a discovery whose form is being settled
     pending_mode: str = ""  # "decide" (the player chooses) or "voice" (the player speaks for one)
+    due_choices: list[dict] = field(default_factory=list)  # customs to settle anew: {did, by}
     commitments: dict[str, int] = field(default_factory=dict)  # player's project id -> slot
     legacy: list[dict] = field(default_factory=list)  # what the player's lives set in motion
     log: list[str] = field(default_factory=list)

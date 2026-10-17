@@ -139,6 +139,9 @@ def neighbours_year(state, rng):
 
 
 def raid_chance(state, n):
+    """How likely they are to raid us this year: worse relations and a quicker temper make
+    it likelier; walls and those set apart to fight make it less so."""
     if not n.met or n.relations > -0.1:
         return 0.0
-    return min(0.35, 0.2 * -n.relations * (0.5 + n.temper))
+    guarded = 1 - min(0.8, discoveries.fx(state, "defence"))
+    return min(0.35, 0.2 * -n.relations * (0.5 + n.temper)) * guarded

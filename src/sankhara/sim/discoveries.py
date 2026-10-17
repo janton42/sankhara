@@ -11,9 +11,13 @@ it out, or else the people's own inclinations, and it changes what follows.
 Effects are combined across everything known:
 - keys ending in `_mult` multiply (food_mult, capacity_mult, insight_mult,
   plague_mult, raid_mult, contact_mult)
-- numbers add (spoilage, health, cohesion, plenty, lore, stores_share, leader_regard)
-- `fishing` and `settled` are flags
+- numbers add (spoilage, health, cohesion, plenty, lore, stores_share, leader_regard,
+  defence)
+- `fishing`, `settled` and `towns` are flags
 - `succession`, `title:<role>` and `category:<id>` are applied once, when learned
+
+A custom's form is not fixed for ever: the people can settle it anew (`resettle`),
+which undoes what the old form set once and applies the new.
 """
 
 import math
@@ -68,6 +72,19 @@ def _game(state):
 
 def _met_anyone(state):
     return any(n.met for n in state.neighbours.values())
+
+
+def _hilly(state):
+    return range_has(state, lambda t: t["biome"].startswith(("Mountain", "Hill")))
+
+
+def _threatened(state):
+    """Another people we have met is unfriendly."""
+    return any(n.met and n.relations < -0.1 for n in state.neighbours.values())
+
+
+def _trades(state):
+    return state.nation.known.get("exchange") in ("barter", "tokens")
 
 
 def _many(n):
@@ -182,7 +199,7 @@ DISCOVERY_LIST = [
         155,
         "land",
         requires=("wild_grain", "seasons"),
-        effects={"capacity_mult": 1.8, "food_mult": 1.05},
+        effects={"capacity_mult": 1.5, "food_mult": 1.05},
         forms=(
             Form(
                 "family_plots",
@@ -216,7 +233,7 @@ DISCOVERY_LIST = [
         145,
         "land",
         requires=("taming",),
-        effects={"capacity_mult": 1.3, "food_mult": 1.05},
+        effects={"capacity_mult": 1.2, "food_mult": 1.05},
     ),
     Discovery(
         "irrigation",
@@ -227,7 +244,38 @@ DISCOVERY_LIST = [
         "land",
         requires=("cultivation", "settling"),
         condition=_water,
-        effects={"capacity_mult": 1.3},
+        effects={"capacity_mult": 1.25},
+    ),
+    Discovery(
+        "plough",
+        "Beasts at the plough",
+        "A planter has been trying to make a tamed beast drag a digging stick.",
+        "Beasts break the ground, so a family can plant far more than it could dig.",
+        500,
+        "land",
+        requires=("cultivation", "herding"),
+        condition=_grass,
+        effects={"capacity_mult": 1.2, "food_mult": 1.05},
+    ),
+    Discovery(
+        "orchards",
+        "Tending trees",
+        "Fruit trees near the oldest villages hang heavy with fruit nobody planted on purpose.",
+        "Trees are planted and tended, and bear for a lifetime.",
+        430,
+        "land",
+        requires=("cultivation", "settling"),
+        effects={"plenty": 4, "food_mult": 1.03},
+    ),
+    Discovery(
+        "granaries",
+        "Granaries",
+        "The harvest is more than the pits can hold, and the rats know it.",
+        "Raised stores of timber and clay keep a whole harvest dry and safe.",
+        450,
+        "land",
+        requires=("pottery", "cultivation", "settling"),
+        effects={"spoilage": -0.06, "stores_share": 0.05},
     ),
     # --- craft ------------------------------------------------------------------
     Discovery(
@@ -302,6 +350,49 @@ DISCOVERY_LIST = [
         requires=("cordage",),
         requires_any=("taming", "cultivation"),
         effects={"health": 1, "plenty": 3},
+    ),
+    Discovery(
+        "copper",
+        "Working copper",
+        "Green stones left in the hottest part of the kiln ran like water and set hard and bright.",
+        "Copper is melted from certain stones and beaten into blades, awls and ornaments.",
+        550,
+        "craft",
+        requires=("pottery",),
+        condition=_hilly,
+        effects={"food_mult": 1.03, "plenty": 3, "raid_mult": 1.2},
+    ),
+    Discovery(
+        "wheel",
+        "The wheel",
+        "Children roll a round slice of log down the slope, and a maker watches them.",
+        "Carts on wheels carry what no back could.",
+        500,
+        "craft",
+        requires=("taming", "dwellings"),
+        requires_any=("herding", "cultivation"),
+        effects={"contact_mult": 1.5, "capacity_mult": 1.05},
+    ),
+    Discovery(
+        "brewing",
+        "Brewing",
+        "Grain left wet in a pot turned into something that makes people sing.",
+        "Grain is brewed into drink for feasts and for the long evenings.",
+        360,
+        "craft",
+        requires=("cultivation", "pottery"),
+        effects={"cohesion": 2, "plenty": 2, "health": -0.5},
+    ),
+    Discovery(
+        "walls",
+        "Walls",
+        "After the last raid, some families built their shelters in a ring, doors inward.",
+        "A wall of earth and timber rings the village.",
+        520,
+        "craft",
+        requires=("dwellings", "settling"),
+        condition=lambda s: _threatened(s) or _many(600)(s),
+        effects={"defence": 0.4, "plague_mult": 1.1, "capacity_mult": 1.05},
     ),
     # --- lore -------------------------------------------------------------------
     Discovery(
@@ -397,6 +488,28 @@ DISCOVERY_LIST = [
         requires=("remedies", "marks"),
         effects={"health": 1.5, "plague_mult": 0.7},
     ),
+    Discovery(
+        "calendar",
+        "Counting the year",
+        "A keeper has been laying out stones to mark where the sun rises through the year.",
+        "The year is counted in days and moons, and planting and gathering follow it.",
+        430,
+        "lore",
+        requires=("seasons", "marks"),
+        effects={"food_mult": 1.05, "insight_mult": 1.05, "lore": 0.3},
+    ),
+    Discovery(
+        "writing",
+        "Marks that speak",
+        "The keepers' notched sticks have grown so many kinds of notch that only they can read "
+        "them.",
+        "Marks that hold words, so what is known need not be remembered.",
+        620,
+        "lore",
+        requires=("marks",),
+        requires_any=("exchange", "law"),
+        effects={"insight_mult": 1.2, "lore": 1.0},
+    ),
     # --- kin and custom ---------------------------------------------------------
     Discovery(
         "gifts",
@@ -431,7 +544,7 @@ DISCOVERY_LIST = [
         "kin",
         requires=("dwellings",),
         requires_any=("cultivation", "fishing", "herding"),
-        effects={"settled": True, "capacity_mult": 1.2, "plague_mult": 1.2},
+        effects={"settled": True, "capacity_mult": 1.15, "plague_mult": 1.2},
     ),
     Discovery(
         "council",
@@ -539,7 +652,150 @@ DISCOVERY_LIST = [
             ),
         ),
     ),
+    Discovery(
+        "descent",
+        "Lines of descent",
+        "People argue over whose kin a child is: the mother's people, or the father's.",
+        "Everyone knows whose kin they are, and what that asks of them.",
+        380,
+        "kin",
+        requires=("burial",),
+        requires_any=("council", "marks"),
+        forms=(
+            Form(
+                "mothers",
+                "Through the mothers",
+                "A child belongs to its mother's people, and her brothers stand by it.",
+                ("caring", "contemplative"),
+                {"cohesion": 3},
+            ),
+            Form(
+                "fathers",
+                "Through the fathers",
+                "A child belongs to its father's people, and takes what he leaves.",
+                ("ambitious", "acquisitive"),
+                {"cohesion": 1, "leader_regard": 1},
+            ),
+            Form(
+                "both_lines",
+                "Both lines remembered",
+                "The keepers remember every line, and a child owes something to each.",
+                ("studious",),
+                {"cohesion": 2, "lore": 0.5},
+            ),
+        ),
+    ),
+    Discovery(
+        "tribute",
+        "What is owed to the leader",
+        "The leader's family works like any other, yet the leader is called on day and night. "
+        "Some say the people should keep them.",
+        "What the people give to the one who leads them, and what they expect back.",
+        450,
+        "kin",
+        requires=("council", "exchange"),
+        condition=_many(700),
+        forms=(
+            Form(
+                "leaders_share",
+                "A share for the leader",
+                "Every family gives a share of what it brings in to the leader's store.",
+                ("ambitious", "acquisitive"),
+                {"stores_share": 0.15, "cohesion": -3, "leader_regard": 3},
+            ),
+            Form(
+                "free_gifts",
+                "Gifts freely given",
+                "The leader is kept by gifts, and a leader nobody gives to does not lead long.",
+                ("generous",),
+                {"cohesion": 2, "leader_regard": 1},
+            ),
+            Form(
+                "nothing_owed",
+                "Nothing owed",
+                "The leader works their own ground like anyone, and leads by being heard.",
+                ("contemplative", "caring"),
+                {"cohesion": 3, "leader_regard": -1},
+            ),
+        ),
+    ),
+    Discovery(
+        "warriors",
+        "Those who fight",
+        "After the raids, the young men have begun to practise with bow and spear together "
+        "in the evenings.",
+        "Who stands between the people and those who would harm them.",
+        480,
+        "kin",
+        requires=("bows", "council"),
+        condition=_threatened,
+        forms=(
+            Form(
+                "all_fight",
+                "Every grown man fights",
+                "When raiders come, every man takes up his bow; no one is set apart for it.",
+                ("diligent", "harsh"),
+                {"defence": 0.3, "cohesion": 1},
+            ),
+            Form(
+                "war_band",
+                "A band of young men",
+                "The strongest young men are set apart to watch, to fight and to strike back.",
+                ("ambitious", "harsh"),
+                {"defence": 0.5, "raid_mult": 1.5, "cohesion": -2, "leader_regard": 2},
+            ),
+            Form(
+                "no_warriors",
+                "No one set apart",
+                "The people guard their camps as they always have, and seek redress rather "
+                "than blood.",
+                ("contemplative", "caring"),
+                {"defence": 0.1, "cohesion": 2},
+            ),
+        ),
+    ),
+    Discovery(
+        "market",
+        "A place for exchange",
+        "At the gatherings, more and more of the time goes on swapping wares.",
+        "A ground where the people, and strangers, meet to exchange what they have.",
+        500,
+        "kin",
+        requires=("festivals", "settling"),
+        condition=_trades,
+        effects={"plenty": 5, "contact_mult": 1.3, "cohesion": 1, "title:trader": "Trader"},
+    ),
+    Discovery(
+        "towns",
+        "The town",
+        "The largest village has grown so big that people at one end of it do not know "
+        "those at the other.",
+        "The largest villages have become towns, with quarters, crafts and strangers.",
+        580,
+        "kin",
+        requires=("settling",),
+        requires_any=("walls", "market"),
+        condition=_many(1500),
+        effects={"towns": True, "capacity_mult": 1.3, "plague_mult": 1.2, "cohesion": -2},
+    ),
 ]
+# What comes after the first ways of living are found: a second era of ideas.
+LATER_IDEAS = (
+    "plough",
+    "orchards",
+    "granaries",
+    "copper",
+    "wheel",
+    "brewing",
+    "walls",
+    "calendar",
+    "writing",
+    "descent",
+    "tribute",
+    "warriors",
+    "market",
+    "towns",
+)
 
 DISCOVERIES = {d.id: d for d in DISCOVERY_LIST}
 
@@ -571,7 +827,35 @@ QUESTIONS = {
     "council": "who should decide for so many",
     "exchange": "what is a fair swap",
     "law": "what must follow when harm is done",
+    "plough": "whether a beast could break the ground",
+    "orchards": "whether trees could be planted like seed",
+    "granaries": "how to keep a whole harvest",
+    "copper": "what the green stones become in the fire",
+    "wheel": "what a rolling log could carry",
+    "brewing": "what the wet grain has become",
+    "walls": "how to keep raiders out",
+    "calendar": "where the sun rises through the year",
+    "writing": "how marks could hold words",
+    "descent": "whose kin a child belongs to",
+    "tribute": "what the people owe the one who leads",
+    "warriors": "whether some should be set apart to fight",
+    "market": "where exchange should happen",
+    "towns": "what the largest village is becoming",
 }
+# How the people do a thing a custom settles; "Change how the people {this}".
+CUSTOMS = {
+    "spirits": "heed the unseen",
+    "burial": "treat their dead",
+    "gifts": "give and receive",
+    "cultivation": "hold the fields",
+    "council": "choose who leads",
+    "exchange": "exchange what they have",
+    "law": "judge wrongs",
+    "descent": "count their kin",
+    "tribute": "keep the one who leads",
+    "warriors": "meet those who would harm them",
+}
+RESETTLE_AFTER = 15  # years a custom stands before anyone would think of changing it
 START_KNOWN = ("fire", "stone_tools", "songs", "spirits")
 DOMAIN_WEIGHT = {"land": 0.4, "craft": 0.25, "lore": 0.2, "kin": 0.15}
 PASSIVE_PICKS = 2  # how many stirring ideas the people's practice feeds each year
@@ -656,9 +940,15 @@ def people_lean(state, tags):
     return sum(tendencies.affinity(c.tendencies, tags) for c in adults) / len(adults)
 
 
-def pick_form(state, d, rng):
-    """The form a discovery takes when nobody in particular decides: the people's leanings."""
-    weights = [math.exp(4 * people_lean(state, f.tags)) for f in d.forms]
+def pick_form(state, d, rng, lean_to=None):
+    """The form a discovery takes when nobody in particular decides: the people's leanings,
+    weighed (if someone brought the matter up) by that person's own."""
+    weights = []
+    for f in d.forms:
+        lean = people_lean(state, f.tags)
+        if lean_to is not None:
+            lean += 0.5 * tendencies.affinity(lean_to.tendencies, f.tags)
+        weights.append(math.exp(4 * lean))
     return rng.choices(d.forms, weights)[0].id
 
 
@@ -677,6 +967,7 @@ def learn(state, did, form_id=""):
     form = d.form(form_id)
     nation.known[did] = form.id if form else ""
     nation.insight.pop(did, None)
+    nation.settled_in[did] = state.year
     fx_all = dict(d.effects) | (form.effects if form else {})
     for key, value in fx_all.items():
         if key == "succession":
@@ -689,6 +980,38 @@ def learn(state, did, form_id=""):
     if form:
         return f"[b]{d.name}[/b]: {form.name.lower()}. {form.text}"
     return f"[b]{d.name}[/b]. {d.text}"
+
+
+def resettle(state, did, form_id):
+    """The people settle a custom they already keep in a new form. What the old form set
+    once (a title, a rule of succession, a kind of exchange) is undone first. Returns a
+    line for the chronicle."""
+    d = DISCOVERIES[did]
+    nation = state.nation
+    old = d.form(nation.known.get(did, ""))
+    if old is not None:
+        for key in old.effects:
+            if key == "succession":
+                nation.succession = "respected"
+            elif key.startswith("title:"):
+                nation.names.pop(key, None)
+            elif key.startswith("category:"):
+                nation.names.pop(key.split(":", 1)[1], None)
+    return learn(state, did, form_id)
+
+
+def customs(state):
+    """Customs the people keep that could be settled anew: (id, what they do) pairs, those
+    settled longest ago first."""
+    nation = state.nation
+    out = [
+        (did, CUSTOMS[did])
+        for did in nation.known
+        if did in CUSTOMS
+        and len(DISCOVERIES[did].forms) > 1
+        and state.year - nation.settled_in.get(did, 0) >= RESETTLE_AFTER
+    ]
+    return sorted(out, key=lambda pair: nation.settled_in.get(pair[0], 0))
 
 
 def categories(nation):

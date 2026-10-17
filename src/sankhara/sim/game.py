@@ -50,6 +50,7 @@ RANGE_RADIUS = 2
 CAMPS = 3
 START_FILL = 0.42  # how full each camp's land is at the start
 LOG_LIMIT = 400
+EACH_TARGET = ("pursue", "reform")  # works offered for every target, not just where most needed
 
 
 # --- founding ----------------------------------------------------------------
@@ -325,7 +326,7 @@ def options(state):
     offered = set()
     for o in projects.options_for(state, player):
         d = o.definition
-        if d.id != "pursue" and d.id in offered:
+        if d.id not in EACH_TARGET and d.id in offered:
             continue  # one of each kind of work, where it is needed most; ideas each their own
         offered.add(d.id)
         (new if d.common else personal).append(
@@ -571,6 +572,8 @@ def end_year(state, attended=True):
             interrupts.append("Something is expected of you.")
         if state.pending_choice:
             name = discoveries.DISCOVERIES[state.pending_choice].name.lower()
+            if state.pending_choice in state.nation.known:
+                name = f"how the people {discoveries.CUSTOMS[state.pending_choice]}"
             if state.pending_mode == "decide":
                 interrupts.append(f"A choice must be made: {name}.")
             else:
@@ -637,18 +640,47 @@ def _idea_workers(state, did):
     return led, helped, names
 
 
+def _decides(state, d, led):
+    """Whether the player chooses a custom's form outright: they worked it out (or called
+    for it to be settled anew), or they lead the people and it is a matter of custom."""
+    return led or (state.player.station == "leader" and d.domain == "kin")
+
+
+def _settle_customs_anew(state, lines, interrupts, rng, protect=()):
+    """Customs someone called the people together over are settled again: decided by the
+    player if they led that or lead the people, otherwise spoken for; during a childhood
+    the people's leanings decide, weighed by whoever called for it."""
+    player = state.player
+    while state.due_choices:
+        due = state.due_choices[0]
+        d = discoveries.DISCOVERIES[due["did"]]
+        if d.id not in state.nation.known:
+            state.due_choices.pop(0)
+            continue
+        if player.id not in protect and not state.life_over:
+            if state.pending_choice is not None:
+                return  # one thing at a time; the rest wait for next year
+            state.due_choices.pop(0)
+            state.pending_choice = d.id
+            state.pending_mode = "decide" if _decides(state, d, due["by"] == player.id) else "voice"
+            return
+        state.due_choices.pop(0)
+        caller = state.character(due["by"])
+        lines.append(_learn(state, d.id, None, rng, lean_to=caller))
+
+
 def _settle_discoveries(state, lines, interrupts, rng, protect=()):
     """Ideas with enough insight become things the people know. A custom with several
     possible forms is decided by the player if they worked it out or lead (and it's a
     matter of custom); otherwise the player can speak for one, unless still a child."""
     player = state.player
+    _settle_customs_anew(state, lines, interrupts, rng, protect)
     for d in discoveries.ripe(state):
         led, helped, names = _idea_workers(state, d.id)
         if d.forms and player.id not in protect and not state.life_over:
             if state.pending_choice is None:
-                decides = led or (player.station == "leader" and d.domain == "kin")
                 state.pending_choice = d.id
-                state.pending_mode = "decide" if decides else "voice"
+                state.pending_mode = "decide" if _decides(state, d, led) else "voice"
             if state.pending_choice == d.id:
                 continue
         lines.append(_learn(state, d.id, None, rng))
@@ -664,11 +696,27 @@ def _settle_discoveries(state, lines, interrupts, rng, protect=()):
             projects.abandon(state, project)
 
 
-def _learn(state, did, form_id, rng):
+def _learn(state, did, form_id, rng, lean_to=None):
+    """The people come to know something, or settle a custom they keep anew. With no form
+    given their own leanings decide, weighed by `lean_to`'s if someone called for it."""
     d = discoveries.DISCOVERIES[did]
     if d.forms and form_id is None:
-        form_id = discoveries.pick_form(state, d, rng)
+        form_id = discoveries.pick_form(state, d, rng, lean_to)
+    if did in state.nation.known:
+        how = discoveries.CUSTOMS[did]
+        return f"The people settled anew how they {how}: " + _settled(state, did, form_id)
     return "The people have come to understand " + discoveries.learn(state, did, form_id or "")
+
+
+def _settled(state, did, form_id):
+    """Re-settle a custom. Returns the chronicle's account of the new form (and the old)."""
+    old = discoveries.DISCOVERIES[did].form(state.nation.known.get(did, ""))
+    text = discoveries.resettle(state, did, form_id)
+    if old and old.id != form_id:
+        text += f" Until now it had been {old.name.lower()}."
+    elif old:
+        text += " Nothing changed."
+    return text
 
 
 VOICE_WEIGHT = 25  # regard at which the player's voice doubles a form's chances
@@ -686,9 +734,15 @@ def choose_form(state, form_id):
         state.soul.karma + KARMA_SCALE * FORM_KARMA * tendencies.tag_karma(form.tags)
     )
     _, _, names = _idea_workers(state, did)
+    anew = did in state.nation.known
+    settle = _settled if anew else discoveries.learn
     if state.pending_mode == "decide":
-        text = discoveries.learn(state, did, form_id)
-        line = "You shaped what the people came to understand: " + text
+        text = settle(state, did, form_id)
+        line = (
+            f"You decided anew how the people {discoveries.CUSTOMS[did]}: "
+            if anew
+            else "You shaped what the people came to understand: "
+        ) + text
         projects.record(
             state, f"{d.name}: {form.name.lower()}, as you decided.", [player.full_name]
         )
@@ -699,7 +753,7 @@ def choose_form(state, form_id):
             for f in d.forms
         ]
         settled = rng.choices(d.forms, weights)[0]
-        text = discoveries.learn(state, did, settled.id)
+        text = settle(state, did, settled.id)
         if settled.id == form_id:
             line = "The people settled it as you had urged: " + text
             projects.record(
@@ -747,6 +801,9 @@ def _end_life(state, cause, lines):
             "legacy": [e["text"] for e in state.legacy if player.full_name in e["names"]],
         }
     )
+    if state.pending_choice in state.nation.known:
+        # a custom being settled anew waits for the next life; a new idea ripens again
+        state.due_choices.insert(0, {"did": state.pending_choice, "by": None})
     state.pending_choice = None
     state.pending_mode = ""
     die(state, player, cause)
