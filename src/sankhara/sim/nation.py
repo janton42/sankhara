@@ -138,6 +138,25 @@ def economy_year(state):
     return notes
 
 
+HOUSEHOLD_SPOILAGE = {"food": 0.15, "goods": 0.05}
+DEPENDANT_UPKEEP = {"food": 2.5, "coin": 0.5}  # per child or non-earning spouse
+FOOD_PRICE = 1.5  # coin per food when a household has to buy
+
+
+def dependants(state, char):
+    """Young children (and, for the household head, a spouse) eat from this household."""
+    count = sum(
+        1
+        for cid in char.children
+        if state.character(cid)
+        and state.character(cid).alive
+        and state.character(cid).age(state.year) < ADULT_AGE
+    )
+    # count children once per couple: the father's household feeds them
+    mother_of_shared = char.gender == "female" and state.character(char.spouse_id) is not None
+    return 0 if mother_of_shared else count
+
+
 def households_year(state):
     """Income and upkeep for every tracked adult's household. Returns notes for the player."""
     notes = []
@@ -156,6 +175,14 @@ def households_year(state):
         }
         char.household.add(income, char.fortune)
         char.household.spend(station.upkeep)
+        char.household.add(DEPENDANT_UPKEEP, -dependants(state, char))
+        for category, share in HOUSEHOLD_SPOILAGE.items():
+            setattr(char.household, category, char.household.get(category) * (1 - share))
+        if char.household.food < 0 and char.household.coin > 0:
+            # buy what food the purse allows
+            bought = min(-char.household.food, char.household.coin / FOOD_PRICE)
+            char.household.food += bought
+            char.household.coin -= bought * FOOD_PRICE
         if char.household.food < 0:
             char.health -= 8
             if char.is_player:

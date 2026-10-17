@@ -1,16 +1,20 @@
 # Sankhara
 
-Sankhara is a turn-based world game played on a procedurally generated hex map.
-You are born into a family on a tile of the world, act each turn, and those
-actions shape your health and karma — and, eventually, what you are reborn as.
+Sankhara is a nation builder without wars, lived one person at a time. Each
+turn is a year. You act as one character, with a few slots of attention and
+whatever budget your station gives you: the treasury if you rule, your
+household if you farm, trade or teach. Events arrive, some of them asking
+something of you. When you die, the nation carries on and you begin again
+somewhere within it.
 
-The name comes from the Pali *saṅkhāra*: the mental formations and volitional
-impulses that, in Buddhist thought, condition what comes next. See
-[Concepts](concepts.md).
+The ideas behind it are in [Concepts](concepts.md); how they are built is in
+[Architecture](architecture.md).
 
 !!! note "Status"
-    Early prototype. Map generation, resources, a basic player/family model and
-    turn actions exist; karma, NPCs and terrain are still stubs.
+    Milestone 1 (the core loop) is playable: yearly turns, six stations,
+    events and obligations, lives, succession and continuing in a new life.
+    Research, policy and territorial growth come in Milestone 2; detailed
+    NPC relationships and court politics in Milestone 3.
 
 ## Running
 
@@ -19,5 +23,6 @@ uv sync
 uv run sankhara        # or: uv run python -m sankhara
 ```
 
-From the main menu choose **New Game**, click a tile to inspect it, and use the
-info panel to start a life and take actions.
+Choose **New Game**. Click a slot under *Your attention* to decide what the
+year is for, then **End the Year**. The game saves itself every year;
+**Continue** picks up where you left off.

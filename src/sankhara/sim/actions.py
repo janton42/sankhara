@@ -57,7 +57,7 @@ def budget_for(state, char, action):
 
 def effective_cost(char, action):
     mult = tendencies.cost_multiplier(char.tendencies, action.tags)
-    return {k: round(v * mult, 1) for k, v in action.cost.items()}
+    return {k: max(1, round(v * mult)) for k, v in action.cost.items()}
 
 
 # --- helpers ---------------------------------------------------------------
@@ -164,6 +164,10 @@ def _has_young_children(state, char):
         state.character(c) and state.character(c).alive and state.character(c).age(state.year) < 20
         for c in char.children
     )
+
+
+def _has_family(state, char):
+    return bool(family_of(state, char))
 
 
 def _unmarried(state, char):
@@ -591,6 +595,7 @@ ACTIONS = {
             _care_family,
             {"food": 2},
             scope="own",
+            requires=_has_family,
         ),
         Action("rest", "Rest and recover", "Let the body mend.", (), (), 0.0, _rest, scope="own"),
         Action(
