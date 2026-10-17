@@ -1,8 +1,7 @@
 import sys
 import os
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
-from core import turn_manager
+from sankhara.core import turn_manager
 
 class MockState:
     def __init__(self, health=50.0):

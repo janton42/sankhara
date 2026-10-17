@@ -1,10 +1,9 @@
 import sys
 import os
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
 
 import pytest
-from core import turn_manager
+from sankhara.core import turn_manager
 
 def test_regenerate_resources_renewable():
     game_map = [[{

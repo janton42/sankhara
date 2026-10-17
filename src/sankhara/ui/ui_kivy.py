@@ -4,12 +4,12 @@ from kivy.uix.button import Button
 from kivy.uix.label import Label
 from kivy.uix.dropdown import DropDown
 from kivy.app import App
-from entities.player import Player
-from entities.player_state import PlayerState
-from entities.lineage import Family
-from ui.screens.info_panel import format_tile_info, format_player_info
-from constants.config import ACTIONS
-from core.turn_manager import regenerate_resources, process_player_actions
+from sankhara.entities.player import Player
+from sankhara.entities.player_state import PlayerState
+from sankhara.entities.lineage import Family
+from sankhara.ui.screens.info_panel import format_tile_info, format_player_info
+from sankhara.constants.config import ACTIONS
+from sankhara.core.turn_manager import regenerate_resources, process_player_actions
 
 
 class InfoPanel(BoxLayout):

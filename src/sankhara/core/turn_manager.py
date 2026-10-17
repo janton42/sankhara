@@ -1,4 +1,4 @@
-from constants.config import RESOURCE_REGENERATION, RESOURCE_RENEWABLE, BIOME_RESOURCE_BASELINES, ACTIONS
+from sankhara.constants.config import RESOURCE_REGENERATION, RESOURCE_RENEWABLE, BIOME_RESOURCE_BASELINES, ACTIONS
 
 def regenerate_resources(game_map):
     """

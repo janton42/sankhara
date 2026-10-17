@@ -1,4 +1,4 @@
-from constants.config import CULTURE_GROUPS
+from sankhara.constants.config import CULTURE_GROUPS
 import random
 
 

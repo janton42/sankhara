@@ -2,7 +2,7 @@ import numpy as np
 from noise import pnoise2
 import random
 
-from constants.config import (
+from sankhara.constants.config import (
     ELEVATION_THRESHOLDS,
     MOISTURE_THRESHOLDS,
     RESOURCE_TYPES,

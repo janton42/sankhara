@@ -5,11 +5,10 @@ import unittest
 import numpy as np
 from unittest.mock import patch
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
 
-from core import game_engine
-from world import map_gen
-from constants.config import (MAP_WIDTH, MAP_HEIGHT, ELEVATION_NOISE, RESOURCE_TYPES, RESOURCE_VARIATION_PERCENTAGE,
+from sankhara.core import game_engine
+from sankhara.world import map_gen
+from sankhara.constants.config import (MAP_WIDTH, MAP_HEIGHT, ELEVATION_NOISE, RESOURCE_TYPES, RESOURCE_VARIATION_PERCENTAGE,
                               BIOME_RESOURCE_BASELINES, ELEVATION_ABBR, MOISTURE_ABBR)
 
 

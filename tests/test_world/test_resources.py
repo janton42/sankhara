@@ -1,9 +1,8 @@
 import sys
 import os
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
 
 import pytest
-from world.resources import calculate_extraction_efficiency, extract_resource, regenerate_resources
+from sankhara.world.resources import calculate_extraction_efficiency, extract_resource, regenerate_resources
 
 def test_extraction_efficiency_diminishing_returns():
     eff1 = calculate_extraction_efficiency(1, 1.0, 1.0)

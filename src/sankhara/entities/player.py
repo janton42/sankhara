@@ -1,8 +1,8 @@
-from entities.player_state import PlayerState
-from entities.lineage import Family
+from sankhara.entities.player_state import PlayerState
+from sankhara.entities.lineage import Family
 from typing import Optional
 from .namer import make_name
-from core.game_engine import coin_flip
+from sankhara.core.game_engine import coin_flip
 
 
 class Player:

@@ -2,7 +2,7 @@ from kivy.uix.screenmanager import Screen
 from kivy.graphics import Color, Line, Rectangle
 from kivy.uix.widget import Widget
 from kivy.core.text import Label as CoreLabel
-from constants.config import (
+from sankhara.constants.config import (
     HEX_WIDTH, HEX_HEIGHT, HEX_HORIZONTAL_SPACING, HEX_VERTICAL_SPACING, HEX_ORIENTATION,
     HEX_EDGE_LENGTH, MAP_WIDTH, MAP_HEIGHT, BIOME_COLORS
 )

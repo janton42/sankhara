@@ -5,11 +5,11 @@ from kivy.core.window import Window
 from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.screenmanager import ScreenManager, Screen
 
-from ui.screens.map_view import MapScreen
-from ui.ui_kivy import InfoPanel
-from core.turn_manager import regenerate_resources, process_player_actions
-from ui.screens.main_menu import MainMenuScreen
-from ui.screens.game_over import GameOverScreen
+from sankhara.ui.screens.map_view import MapScreen
+from sankhara.ui.ui_kivy import InfoPanel
+from sankhara.core.turn_manager import regenerate_resources, process_player_actions
+from sankhara.ui.screens.main_menu import MainMenuScreen
+from sankhara.ui.screens.game_over import GameOverScreen
 
 class MainScreen(BoxLayout):
     def __init__(self, **kwargs):
@@ -17,7 +17,7 @@ class MainScreen(BoxLayout):
         self.orientation = 'horizontal'
 
         # Generate and store the game map at the top level
-        from core.game_engine import generate_map
+        from sankhara.core.game_engine import generate_map
         self.game_map = generate_map()
 
         self.left_panel = InfoPanel(size_hint=(0.4, 1))
@@ -93,5 +93,8 @@ class SankharaApp(App):
     def game_over(self):
         self.sm.current = 'gameover'
 
-if __name__ == '__main__':
+def main():
     SankharaApp().run()
+
+if __name__ == '__main__':
+    main()

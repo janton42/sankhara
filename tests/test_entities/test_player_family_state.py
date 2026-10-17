@@ -1,10 +1,9 @@
 import sys
 import os
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
-from entities.player import Player
-from entities.player_state import PlayerState
-from entities.lineage import Family
+from sankhara.entities.player import Player
+from sankhara.entities.player_state import PlayerState
+from sankhara.entities.lineage import Family
 
 
 class DummyFamily(Family):
