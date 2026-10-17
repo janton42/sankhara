@@ -1,6 +1,6 @@
 import json
 
-from sankhara.sim import discoveries, game, people, save, tendencies
+from sankhara.sim import actions, discoveries, events, game, people, save, tendencies
 from sankhara.sim.state import EventInstance, GameState
 from sankhara.sim.stations import ACTION_SLOTS, ADULT_AGE, rebirth_weights, station_title
 
@@ -9,6 +9,17 @@ def _quiet(state):
     """No events and nothing planned, so a test controls the year."""
     state.events = []
     state.plan = [None] * ACTION_SLOTS
+
+
+def _matter(state, kind, text="", **kw):
+    """Put a matter in front of the player this year. Returns it."""
+    event = events.offer(state, state.player, EventInstance(kind, text or kind, **kw))
+    state.events.append(event)
+    return event
+
+
+def _answer(event, action_id):
+    return events.answer_key(event, action_id)
 
 
 def test_new_game_starts_as_a_young_leader_of_a_small_band(state):
@@ -43,19 +54,51 @@ def test_there_is_no_money_or_trade_goods_at_the_start(state):
     assert "coin" not in text and "goods" not in text
 
 
-def test_obligations_are_listed_first(state):
-    state.events = [EventInstance("stranger", "A stranger", obligation="welcome_stranger")]
-    opts = game.options(state)
-    assert opts[0].kind == "obligation" and opts[0].key == "event:0"
-    assert all(o.kind != "obligation" for o in opts[1:])
+def test_options_come_in_three_groups(state):
+    _quiet(state)
+    _matter(state, "idler", target_id=None)
+    groups = [o.group for o in game.options(state)]
+    assert set(groups) == {"works", "matters", "own"}
+    assert groups == sorted(groups, key=["matters", "works", "own"].index)
+
+
+def test_a_matter_offers_ways_to_meet_it_and_expected_ones_come_first(state):
+    _quiet(state)
+    _matter(state, "idler")
+    stranger = _matter(state, "stranger")
+    assert stranger.expected and stranger.answers == ["welcome_stranger", "send_on"]
+    answers = [o for o in game.options(state) if o.kind == "answer"]
+    assert answers[0].expected and answers[0].blurb == "stranger"
+    assert {o.key for o in answers if o.expected} == {
+        _answer(stranger, "welcome_stranger"),
+        _answer(stranger, "send_on"),
+    }
+
+
+def test_answers_depend_on_role(state):
+    _quiet(state)
+    state.nation.stores.set("food", 200)
+    hunger = _matter(state, "hunger")
+    assert "open_stores" in hunger.answers and "bring_food" not in hunger.answers
+    state.player.station = "hunter"
+    hunger = _matter(state, "hunger")
+    assert "bring_food" in hunger.answers and "open_stores" not in hunger.answers
+
+
+def test_lasting_cares_never_ask_you_to_be_selfish_or_harsh():
+    """Taking more than your share, shaming, hoarding knowledge: those come up only as one
+    way of meeting a real matter, never as an item on a menu."""
+    for care in (a for a in actions.ACTION_LIST if a.care):
+        assert not {"acquisitive", "harsh", "indulgent"} & set(care.tags), care.id
 
 
 def test_choose_rejects_duplicates_and_unaffordable(state):
     _quiet(state)
-    assert game.choose(state, 0, "call_together")
-    assert not game.choose(state, 1, "call_together")
-    state.player.means.set("regard", 0)
-    assert not game.choose(state, 0, "call_together")
+    state.player.tendencies = {}
+    assert game.choose(state, 0, "go_among")
+    assert not game.choose(state, 1, "go_among")
+    state.player.means.set("hands", 0)
+    assert not game.choose(state, 0, "go_among")
     assert game.choose(state, 0, None)
     assert state.plan[0] is None
 
@@ -64,8 +107,9 @@ def test_costs_are_cumulative_across_slots(state):
     _quiet(state)
     state.player.tendencies = {}
     state.player.means.set("regard", 6)
-    assert game.choose(state, 0, "call_together")  # 4 regard
-    assert not game.choose(state, 1, "drive_out")  # 3 regard, only 2 left
+    discord = _matter(state, "discord")
+    assert game.choose(state, 0, _answer(discord, "call_together"))  # 4 regard
+    assert not game.choose(state, 1, _answer(discord, "drive_out"))  # 3 regard, only 2 left
 
 
 def test_a_project_holds_its_slot_until_finished(state):
@@ -186,7 +230,7 @@ def test_choosing_strengthens_inclinations(state):
     player = state.player
     player.tendencies = {t: 0.0 for t in tendencies.TAGS}
     _quiet(state)
-    state.plan = ["call_together", None, None]
+    state.plan = ["go_among", None, None]
     game.end_year(state)
     assert player.tendencies["caring"] > 0
     assert player.tendencies["generous"] == 0
@@ -200,6 +244,19 @@ def test_a_chosen_deed_is_kept_up_until_changed(state):
     assert state.plan[2] == "rest"
     game.choose(state, 2, None)
     game.end_year(state)
+    assert state.plan == [None] * ACTION_SLOTS
+
+
+def test_an_answer_is_kept_up_while_the_matter_lasts(state):
+    _quiet(state)
+    discord = _matter(state, "discord")
+    key = _answer(discord, "settle_quarrels")
+    assert game.choose(state, 0, key)
+    state.events = [events.offer(state, state.player, EventInstance("discord", "again"))]
+    game.replan(state, list(state.plan))
+    assert state.plan[0] == key
+    state.events = []  # the quarrels are over
+    game.replan(state, list(state.plan))
     assert state.plan == [None] * ACTION_SLOTS
 
 
@@ -233,8 +290,8 @@ def test_skipping_an_obligation_costs_karma():
     def year(take):
         s = game.new_game(seed=99)
         _quiet(s)
-        s.events = [EventInstance("stranger", "x", obligation="welcome_stranger", penalty=0.05)]
-        s.plan = ["event:0" if take else None, None, None]
+        stranger = _matter(s, "stranger")
+        s.plan = [_answer(stranger, "welcome_stranger") if take else None, None, None]
         before = s.soul.karma
         game.end_year(s)
         return s.soul.karma - before
@@ -246,17 +303,10 @@ def test_an_alternative_answer_meets_the_obligation_with_its_own_weight(state):
     n = next(iter(state.neighbours.values()))
     n.met = True
     _quiet(state)
-    state.events = [
-        EventInstance(
-            "raid",
-            "raid",
-            obligation="answer_raid",
-            penalty=0.06,
-            data={"neighbour": n.id, "also": ["avenge_raid"]},
-        )
-    ]
+    raid = _matter(state, "raid", data={"neighbour": n.id, "camp": state.seat.name})
+    assert raid.expected and "avenge_raid" in raid.answers
     before = n.relations
-    state.plan = ["avenge_raid", None, None]
+    state.plan = [_answer(raid, "avenge_raid"), None, None]
     karma = state.soul.karma
     game.end_year(state)
     assert n.relations < before
@@ -276,7 +326,7 @@ def test_obligations_are_noticed(state):
         report = game.end_year(state)
         if report.life_ended:
             break
-        if any(e.obligation for e in state.events):
+        if game.unmet(state):
             assert "Something is expected of you." in report.interrupts
             seen = True
             break
@@ -525,11 +575,15 @@ def test_anyone_respected_can_ask_to_lead(state):
     me.is_player = True
     state.player_id = me.id
     me.means.set("regard", 10)
-    assert "stand_forward" not in {o.key for o in game.options(state)}
+    talk_of_leading = events.EVENT_DEFS["could_lead"].chance
+    assert talk_of_leading(state, me) == 0
     me.means.set("regard", 300)
     leader.means.set("regard", 5)
+    assert talk_of_leading(state, me) > 0
     _quiet(state)
-    assert game.choose(state, 0, "stand_forward")
+    talk = _matter(state, "could_lead")
+    assert talk.answers == ["stand_forward", "back_leader"]
+    assert game.choose(state, 0, _answer(talk, "stand_forward"))
     report = game.end_year(state)
     assert state.nation.leader_id == me.id
     assert "The people have turned to you to lead them." in report.interrupts

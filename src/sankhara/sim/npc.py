@@ -7,7 +7,8 @@ people to help. Every choice shapes who they are becoming."""
 import math
 
 from sankhara.sim import projects, tendencies
-from sankhara.sim.actions import Ctx, actions_for, budget_for, effective_cost
+from sankhara.sim.actions import Ctx, budget_for, cares_for, effective_cost
+from sankhara.sim.events import lasting_answers
 from sankhara.sim.nation import capacity
 from sankhara.sim.stations import ADULT_AGE
 
@@ -54,7 +55,8 @@ def _pick(options, weights, rng):
 
 
 def choose_deed(state, char, rng):
-    options = actions_for(state, char)
+    """A care, or an answer to one of the matters the people's state has raised."""
+    options = cares_for(state, char) + lasting_answers(state, char)
     weights = []
     for a in options:
         if not budget_for(state, char, a).can_afford(effective_cost(state, char, a)):

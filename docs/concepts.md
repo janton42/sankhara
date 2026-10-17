@@ -48,23 +48,47 @@ later, while old ways grow rarer.
 ## A year
 
 One turn is one year. The years run on a clock the player can pause or step
-through one at a time; each year lasts long enough to react. News (an
-obligation, a work finished or stalled, a discovery, strangers, a death) is
+through one at a time; each year lasts long enough to react. News (something
+expected of you, a work finished or stalled, a discovery, strangers, a death) is
 shown and lingers but does not stop the years. Only a pop-up asking the player
 to decide holds them.
 
 The player acts as their current character, not as an abstract manager. They
 have:
 
-- **Three slots of attention**, all optional. A slot holds a one-year deed, an
-  answer to an obligation, or a multi-year project. Nothing is chosen for the
-  player: a deed is kept up until changed, a finished project leaves its slot
-  empty, and a whole life can pass with nothing taken up.
+- **Three slots of attention**, all optional. Nothing is chosen for the
+  player, and a whole life can pass with nothing taken up.
 - **Their role's means**: a coarse budget of a few kinds (food, hands, regard,
   and later whatever form of exchange the people settle on). The leader also
   draws on what is held in common; others on their family's.
 
-The attention choices are placeholders and need their own design pass.
+## Attention
+
+What a slot can hold comes in three groups, so there are only a dozen or so
+things to weigh in a year rather than a long menu:
+
+- **Matters at hand**: situations drawn from the people's real state and the
+  year's events: a hungry camp, quarrels between named families, low stores or
+  plenty, a stranger at the fire, a dying elder, a raid, talk that you should
+  lead. Each role meets some of their own too (a hunter's share of a great kill,
+  a keeper asked for the oldest songs, a maker asked for a blade). A matter
+  offers two or three ways to meet it, which depend on the role: the leader can
+  open the common stores to the hungry, a hunter can bring them meat, anyone can
+  share their family's food or keep it close. Some matters are expected of the
+  player; ignoring those weighs on the life, and any answer meets them. An
+  answer is kept up for as long as the matter lasts.
+- **The people's works**: begin, help with, take up or call others to them (see
+  below). A work holds its slot until it is finished, set aside or stalls, and
+  then the slot is left free.
+- **Your own**: personal undertakings (raising a child, an apprentice, a
+  following, a shelter) and lasting cares (your kin, your craft, the songs, the
+  unseen), kept up until changed.
+
+No choice is labelled good or bad. Taking more than your share, shaming
+someone, hoarding knowledge or driving a hard bargain never appear as items on
+a menu; they come up only as one way of meeting a real situation, next to the
+others. Regard is earned by serving the people: tending them, keeping their
+songs, and above all leading or helping a work of theirs to the end.
 
 ## Leading from anywhere
 
@@ -113,8 +137,8 @@ player shaped remain, and they may be born into the consequences.
 
 A hidden score in [-1, 1], never shown as a number or a word; only its effects
 are felt. It attaches to intention and choice, never to outcomes or to the
-budget: which deeds and projects are taken up, which obligations are skipped,
-which forms are chosen. Stepping through a year attentively weighs slightly
+budget: which answers, cares and works are taken up, which expected matters
+are ignored, which forms are chosen. Stepping through a year attentively weighs slightly
 well; letting a year slip by with nothing taken up weighs slightly ill.
 
 At rebirth karma shapes the conditions within the new role, not the role
@@ -149,7 +173,6 @@ like everything else.
 
 - **M2**: policy and government, and more development.
 - **M3**: detailed NPCs, relationships and politics.
-- A design pass on the attention choices.
 - Becoming non-human is out of the main game (perhaps an easter egg).
 
 ## Play-test notes

@@ -1,12 +1,25 @@
 """Headless checks of the game UI wired to a real simulation."""
 
+import pytest
+from kivy.core.window import Window
 from kivy.uix.label import Label
+from kivy.uix.modalview import ModalView
 
 from sankhara.sim import discoveries, game
 from sankhara.ui import words
 from sankhara.ui.game_view import ChooserPopup, FormChoicePopup, GameView, KnowledgePopup
 from sankhara.ui.screens.life import LifeScreen
 from sankhara.ui.screens.main_menu import ABOUT_TEXT
+
+
+@pytest.fixture(autouse=True)
+def no_leftover_popups():
+    """A dismissed pop-up animates away on the clock, which doesn't run here; clear any
+    left over so they don't hold the next test's years."""
+    yield
+    for w in list(Window.children):
+        if isinstance(w, ModalView):
+            w.dismiss(animation=False)
 
 
 def make_view():
@@ -64,7 +77,7 @@ def test_chooser_lists_every_option():
     text = all_text(popup.content)
     for opt in game.options(view.state):
         assert opt.name in text
-    assert "Begin something for the people" in text
+    assert "The people's works" in text and "Your own" in text
 
 
 def test_hidden_ideas_never_appear_on_screen():
@@ -74,6 +87,10 @@ def test_hidden_ideas_never_appear_on_screen():
         if view.state.life_over:
             game.begin_next_life(view.state)
             view.refresh()
+        if view.choice_popup is not None:  # answer it, so it doesn't stay open
+            view.choice_popup._choose(
+                discoveries.DISCOVERIES[view.state.pending_choice].forms[0].id
+            )
     text = (all_text(view) + "\n".join(view.state.log)).lower()
     for word in ("karma", "rebirth", "reincarnat", "tendenc", "sankh"):
         assert word not in text
