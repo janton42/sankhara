@@ -5,7 +5,7 @@ from pathlib import Path
 
 from sankhara.sim.state import GameState
 
-SAVE_VERSION = 3  # 3: the people's works (shared projects), voices, legacy
+SAVE_VERSION = 4  # 4: matters at hand with their answers, and lasting cares
 
 
 def save(state, path):

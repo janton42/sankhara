@@ -36,6 +36,8 @@ SUPPORT_FADE = 0.8  # support fades unless someone keeps calling people to it
 RALLY_COST = {"regard": 5}
 RALLY_TAGS = ("ambitious", "caring")
 LEGACY_LIMIT = 200
+FINISH_REGARD = 5  # the people remember who led a work of theirs to the end...
+HELPED_REGARD = 2  # ...and who helped
 
 
 @dataclass(frozen=True)
@@ -169,12 +171,14 @@ def _explore_finish(ctx, project):
 
 
 def _missing_work(work):
+    """Camps that lack this work, largest first: any of them for the leader, one's own camp
+    for anyone else."""
+
     def targets(state, char):
-        return [
-            (str(s.id), s.name)
-            for s in state.settlements.values()
-            if s.works.get(work, 0) < WORK_CAPS[work]
-        ]
+        camps = sorted(state.settlements.values(), key=lambda s: -s.population)
+        if char.station != "leader":
+            camps = [s for s in camps if s.id == char.settlement_id]
+        return [(str(s.id), s.name) for s in camps if s.works.get(work, 0) < WORK_CAPS[work]]
 
     return targets
 
@@ -226,7 +230,9 @@ def _teach_young_finish(ctx, project):
 
 
 def _met_targets(state, char):
-    return [(str(n.id), f"the {n.name}") for n in state.neighbours.values() if n.met]
+    """Peoples we have met, those we are on worst terms with first."""
+    met = sorted((n for n in state.neighbours.values() if n.met), key=lambda n: n.relations)
+    return [(str(n.id), f"the {n.name}") for n in met]
 
 
 def _friendship_work(ctx, project):
@@ -878,6 +884,10 @@ def _finish(state, project, char, rng):
     name = display_name(state, project)
     del state.projects[str(project.id)]
     line = d.finish(Ctx(state, char, rng), project) if d.finish else f"{name}: done."
+    if project.common:
+        char.means.add({"regard": FINISH_REGARD})
+        for helper in filter(None, map(state.character, project.helpers)):
+            helper.means.add({"regard": HELPED_REGARD})
     if project.worked_by and project.common:
         record(state, f"{line} (Begun by {project.started_by}.)", project.worked_by)
     if state.player_id in (project.leader_id, *project.helpers):

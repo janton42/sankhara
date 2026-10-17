@@ -1,18 +1,31 @@
-"""Yearly events. Some are random, some grow out of the people's state, and several
-place an obligation on the player. Ignoring an obligation costs karma; meeting
-it guarantees nothing. Outcomes are deliberately not fair.
+"""Yearly events and the matters at hand.
+
+Some events are only news (a kind year, a sickness, a fall). Others are matters
+the player could meet: they carry the ways the player's role can answer them
+(`answers`, action ids from `actions.py`). Some grow out of the people's state
+and last as long as it does (hunger, quarrels, low stores, plenty, talk of who
+should lead); some come by chance (a stranger, a feud, a raid); some come with a
+role (a hunter's share of a great kill, a keeper asked for the oldest songs).
+
+A matter is `expected` of the player when their role gives them a plain duty in
+it; ignoring it then costs karma, and any answer meets it, each with its own
+weight. Meeting it guarantees nothing. Outcomes are deliberately not fair.
 """
 
 from dataclasses import dataclass
 
 from sankhara.sim import discoveries
-from sankhara.sim.nation import adjust_settlements, refresh_averages
-from sankhara.sim.people import die, family_of
+from sankhara.sim.actions import ACTIONS, could_lead, open_to
+from sankhara.sim.nation import adjust_settlements, people_scale, refresh_averages
+from sankhara.sim.people import FRAIL_HEALTH, STEP_ASIDE_AGE, die, family_of, standing
 from sankhara.sim.peoples import raid_chance
 from sankhara.sim.state import EventInstance
 from sankhara.sim.world import camp_tiles, is_watery
 
 HUNGER_THRESHOLD = 0.05  # a shortfall bigger than this share of need is felt as hunger
+LOW_STORES = 15  # common food per unit of people_scale below which the stores are low
+FULL_STORES = 70  # ...and above which there is plenty
+TALK_OF_LEADING = 0.35  # standing, relative to the leader's, at which people say you should lead
 
 
 @dataclass(frozen=True)
@@ -21,6 +34,9 @@ class EventDef:
     chance: object  # (state, char) -> probability this year
     build: object  # (state, char, rng) -> EventInstance | None, applying immediate effects
     resolve: object = None  # (state, event, taken, rng) -> str | None
+    answers: tuple = ()  # every way of meeting it; each is offered if open to the character
+    expects: tuple = ()  # answers that, if open to the character, make it expected of them
+    penalty: float = 0.0
 
 
 def _is_leader(char):
@@ -54,7 +70,12 @@ def _flood(state, char, rng):
     s = rng.choice(wet)
     s.population *= 0.96
     state.modifiers[f"harvest:{s.id}"] = 0.75
-    return EventInstance("flood", f"The water rose around {s.name} and swept shelters away.", s.id)
+    return EventInstance(
+        "flood",
+        f"The water rose around {s.name} and swept shelters away.",
+        s.id,
+        data={"camp": s.name},
+    )
 
 
 def _omen(state, char, rng):
@@ -73,34 +94,44 @@ def _spark(state, char, rng):
     return EventInstance("spark", d.hint)
 
 
-def _hunger(state, char, rng):
-    hungry = [s.name for s in state.settlements.values() if _short(s)]
-    if _is_leader(char) and state.nation.stores.get("food") >= 20:
-        obligation = "open_stores"
-    elif not _is_leader(char) and char.means.get("food") > 6:
-        obligation = "share_food"
-    else:
-        obligation = None
-    text = f"People are going hungry in {', '.join(hungry)}."
-    if obligation:
-        text += " What you have could help."
-    return EventInstance("hunger", text, obligation=obligation, penalty=0.1)
-
-
 def _short(s):
     return s.food_balance < -HUNGER_THRESHOLD * s.population * 0.1
 
 
+def _hungry(state):
+    return any(_short(x) for x in state.settlements.values())
+
+
+def _hunger(state, char, rng):
+    hungry = [s.name for s in state.settlements.values() if _short(s)]
+    return EventInstance("hunger", f"People are going hungry in {', '.join(hungry)}.")
+
+
+def _stores_low(state):
+    return state.nation.stores.get("food") < LOW_STORES * people_scale(state)
+
+
+def _low_stores(state, char, rng):
+    return EventInstance("low_stores", "The common stores are running low.")
+
+
+def _plenty(state):
+    if _hungry(state):
+        return False
+    full = state.nation.stores.get("food") > FULL_STORES * people_scale(state)
+    return full or state.modifiers.get("harvest", 1.0) > 1.0
+
+
+def _plenty_build(state, char, rng):
+    return EventInstance("plenty", "There is food to spare this year.")
+
+
 def _discord(state, char, rng):
-    obligation = "settle_quarrels" if _is_leader(char) else None
-    text = "The camps are full of quarrels and old grudges."
-    if obligation:
-        text += " Everyone is waiting for you to do something."
-    return EventInstance("discord", text, obligation=obligation, penalty=0.07)
+    return EventInstance("discord", "The camps are full of quarrels and old grudges.")
 
 
 def _discord_resolve(state, event, taken, rng):
-    if not taken:
+    if not taken and event.expected:
         adjust_settlements(state, cohesion=-4)
         return "The quarrels festered."
     return None
@@ -111,27 +142,45 @@ def _feud(state, char, rng):
 
     a = make_family_name(state.nation.culture, rng)
     b = make_family_name(state.nation.culture, rng)
-    if _is_leader(char):
-        obligation = "judge_feud"
-    elif rng.random() < 0.5:
-        obligation = "make_peace"
-    else:
-        obligation = None
-    text = f"The {a} and {b} families are at each other's throats over a broken promise."
-    if obligation == "make_peace":
-        text += " You know both families well."
-    return EventInstance("feud", text, obligation=obligation, penalty=0.06, data={"a": a, "b": b})
+    return EventInstance(
+        "feud",
+        f"The {a} and {b} families are at each other's throats over a broken promise.",
+        data={"a": a, "b": b},
+    )
 
 
 def _feud_resolve(state, event, taken, rng):
-    if taken and rng.random() < 0.8:
+    peacemaking = {"judge_feud", "make_peace"} & set(event.data.get("taken_with", []))
+    if peacemaking and rng.random() < 0.8:
         return f"The {event.data['a']} and {event.data['b']} families made their peace."
+    if not taken and not event.expected:
+        return None  # the player stood aside; it ran its own course
     if rng.random() < 0.4:
         state.seat.population = max(12.0, state.seat.population - 1)
         adjust_settlements(state, cohesion=-3)
         return f"A man of the {event.data['a']} family was killed. Nobody will say who did it."
     adjust_settlements(state, cohesion=-1)
     return f"The {event.data['a']} and {event.data['b']} families no longer speak."
+
+
+def _talk_of_leading(state, char):
+    """Whether people have begun to say this character should lead."""
+    if not could_lead(state, char):
+        return False
+    leader = state.leader
+    if leader is None or leader.age(state.year) >= STEP_ASIDE_AGE or leader.health < FRAIL_HEALTH:
+        return True
+    return standing(char) > TALK_OF_LEADING * standing(leader)
+
+
+def _could_lead_build(state, char, rng):
+    leader = state.leader
+    name = leader.name if leader else "the one who leads"
+    return EventInstance(
+        "could_lead",
+        "Some have begun to say you should lead the people.",
+        data={"leader": name},
+    )
 
 
 def _raid(state, char, rng):
@@ -145,17 +194,11 @@ def _raid(state, char, rng):
     camp.population = max(12.0, camp.population - rng.randint(1, 4))
     camp.cohesion = max(0.0, camp.cohesion - 2)
     refresh_averages(state)
-    obligation = "answer_raid" if _is_leader(char) else None
-    text = f"The {n.name} raided {camp.name} by night, took food and left people dead."
-    if obligation:
-        text += " The people are looking to you."
     return EventInstance(
         "raid",
-        text,
+        f"The {n.name} raided {camp.name} by night, took food and left people dead.",
         camp.id,
-        obligation=obligation,
-        penalty=0.06,
-        data={"neighbour": n.id, "also": ["avenge_raid"]},
+        data={"neighbour": n.id, "camp": camp.name},
     )
 
 
@@ -168,27 +211,29 @@ def _raid_resolve(state, event, taken, rng):
             n.relations = min(1.0, n.relations + 0.2)
             return f"The {n.name} sent back some of what they took, and gifts besides."
         return f"The {n.name} laughed at our messengers."
-    if not taken:
+    if not taken and event.expected:
         adjust_settlements(state, cohesion=-3)
         return "Nothing was done about the raid. People talk of little else."
     return None
 
 
 def _beast(state, char, rng):
-    can = char.station in ("leader", "hunter")
-    text = "A great cat has been taking people at the edge of the camps."
-    return EventInstance("beast", text, obligation="hunt_beast" if can else None, penalty=0.05)
+    return EventInstance("beast", "A great cat has been taking people at the edge of the camps.")
 
 
 def _beast_resolve(state, event, taken, rng):
-    if taken and rng.random() < 0.7:
+    if not taken and not event.expected:
+        return None  # others went after it; the player wasn't among them
+    hunted = "hunt_beast" in event.data.get("taken_with", [])
+    if hunted and rng.random() < 0.7:
         state.player.means.add({"regard": 3})
         return "The cat was hunted down and its skin hung by the fire."
-    if taken and rng.random() < 0.3:
+    if hunted and rng.random() < 0.3:
         state.player.health -= 20
         return "The cat was killed, but it mauled you first."
-    state.seat.population = max(12.0, state.seat.population - rng.randint(1, 3))
-    return "The cat took more people before it moved on."
+    lost = rng.randint(1, 3) - ("guard_young" in event.data.get("taken_with", []))
+    state.seat.population = max(12.0, state.seat.population - max(0, lost))
+    return "The cat took more people before it moved on." if lost > 0 else None
 
 
 # --- near you --------------------------------------------------------------
@@ -205,15 +250,13 @@ def _neighbours_of(state, char):
 
 def _stranger(state, char, rng):
     return EventInstance(
-        "stranger",
-        "A stranger came to your fire at dusk, alone and half-starved.",
-        obligation="welcome_stranger",
-        penalty=0.05,
+        "stranger", "A stranger came to your fire at dusk, alone and half-starved."
     )
 
 
 def _stranger_resolve(state, event, taken, rng):
-    if taken and rng.random() < 0.12:
+    welcomed = "welcome_stranger" in event.data.get("taken_with", [])
+    if welcomed and rng.random() < 0.12:
         state.player.means.set("food", state.player.means.get("food") * 0.7)
         return "In the morning the stranger was gone, and so was some of your food."
     return None
@@ -227,8 +270,6 @@ def _lost_child(state, char, rng):
         "lost_child",
         f"{whose} has wandered off and not come back.",
         target_id=who.id if who else None,
-        obligation="search",
-        penalty=0.05,
     )
 
 
@@ -250,11 +291,7 @@ def _dying_elder(state, char, rng):
     who = rng.choice(old)
     who.health = min(who.health, 8)
     return EventInstance(
-        "dying_elder",
-        f"Old {who.full_name} is dying and asks for you.",
-        target_id=who.id,
-        obligation="sit_with_dying",
-        penalty=0.04,
+        "dying_elder", f"Old {who.full_name} is dying and asks for you.", target_id=who.id
     )
 
 
@@ -273,8 +310,6 @@ def _relative_ill(state, char, rng):
         "relative_ill",
         f"Your {rel} {target.name} has fallen badly ill.",
         target_id=target.id,
-        obligation="tend_relative",
-        penalty=0.08,
     )
 
 
@@ -288,8 +323,6 @@ def _sick_neighbour(state, char, rng):
         "sick_neighbour",
         f"{n.full_name} has fallen ill and has no one to look after them.",
         target_id=n.id,
-        obligation="tend_relative",
-        penalty=0.04,
     )
 
 
@@ -304,6 +337,51 @@ def _ill_resolve(state, event, taken, rng):
         target.adjust_affinity(state.player_id, -0.3)
         return f"{target.full_name} recovered, no thanks to you."
     return f"{target.full_name} recovered."
+
+
+def _idler(state, char, rng):
+    near = [c for c in _neighbours_of(state, char) if c.age(state.year) >= 16]
+    if not near:
+        return None
+    who = rng.choice(near)
+    return EventInstance(
+        "idler", f"{who.full_name} does little, and eats what others bring in.", target_id=who.id
+    )
+
+
+# --- what each role meets -------------------------------------------------------
+
+
+def _great_kill(state, char, rng):
+    return EventInstance("great_kill", "The hunters have brought down a great beast together.")
+
+
+def _deep_songs(state, char, rng):
+    return EventInstance(
+        "deep_songs", "The young keep asking about the oldest songs, the ones few still know."
+    )
+
+
+def _asks_for_tools(state, char, rng):
+    near = _neighbours_of(state, char)
+    if not near:
+        return None
+    who = rng.choice(near)
+    return EventInstance(
+        "asks_for_tools", f"{who.full_name} has asked you for a good blade.", target_id=who.id
+    )
+
+
+def _needs_goods(state, char, rng):
+    near = _neighbours_of(state, char)
+    if not near:
+        return None
+    who = rng.choice(near)
+    return EventInstance(
+        "needs_goods",
+        f"{who.full_name}'s family badly needs what you carry.",
+        target_id=who.id,
+    )
 
 
 # --- you ----------------------------------------------------------------------
@@ -329,42 +407,153 @@ def _theft(state, char, rng):
     return EventInstance("theft", "Someone has been stealing from your family's food.")
 
 
+def _role(*stations, chance):
+    return lambda s, c: chance if c.station in stations else 0.0
+
+
 EVENTS = [
-    EventDef("lean_year", lambda s, c: 0.09, _lean_year),
-    EventDef("rich_year", lambda s, c: 0.09, _rich_year),
-    EventDef("sickness", lambda s, c: 0.035, _sickness),
-    EventDef("flood", lambda s, c: 0.04, _flood),
-    EventDef("omen", lambda s, c: 0.03, _omen),
-    EventDef("spark", lambda s, c: 0.08, _spark),
+    # what lasts as long as the people's state does
     EventDef(
         "hunger",
-        lambda s, c: 0.85 if any(_short(x) for x in s.settlements.values()) else 0.0,
+        lambda s, c: 0.9 if _hungry(s) else 0.0,
         _hunger,
+        answers=("open_stores", "share_food", "bring_food", "keep_close"),
+        expects=("open_stores", "share_food"),
+        penalty=0.1,
     ),
     EventDef(
         "discord",
-        lambda s, c: 0.5 if s.nation.cohesion < 35 else 0.0,
+        lambda s, c: 0.8 if s.nation.cohesion < 35 else 0.0,
         _discord,
         _discord_resolve,
+        answers=("settle_quarrels", "call_together", "drive_out", "speak_at_fires"),
+        expects=("settle_quarrels", "call_together"),
+        penalty=0.07,
     ),
+    EventDef(
+        "low_stores",
+        lambda s, c: 0.7 if _stores_low(s) and not _hungry(s) else 0.0,
+        _low_stores,
+        answers=("great_hunt", "stock_stores"),
+    ),
+    EventDef(
+        "could_lead",
+        lambda s, c: 0.4 if _talk_of_leading(s, c) else 0.0,
+        _could_lead_build,
+        answers=("stand_forward", "back_leader"),
+    ),
+    # chance
+    EventDef("lean_year", lambda s, c: 0.09, _lean_year),
+    EventDef("rich_year", lambda s, c: 0.09, _rich_year),
+    EventDef(
+        "plenty",
+        lambda s, c: 0.6 if _plenty(s) else 0.0,
+        _plenty_build,
+        answers=("feast_all", "larger_share", "take_more", "feast"),
+    ),
+    EventDef("sickness", lambda s, c: 0.035, _sickness, answers=("nurse_sick",)),
+    EventDef("flood", lambda s, c: 0.04, _flood, answers=("help_camp",)),
+    EventDef("omen", lambda s, c: 0.03, _omen, answers=("good_signs", "true_signs")),
+    EventDef("spark", lambda s, c: 0.08, _spark),
     EventDef(
         "feud",
         lambda s, c: 0.04 + (0.08 if s.nation.cohesion < 45 else 0.0),
         _feud,
         _feud_resolve,
+        answers=("judge_feud", "make_peace", "side_with"),
+        expects=("judge_feud",),
+        penalty=0.06,
     ),
     EventDef(
         "raid",
         lambda s, c: max((raid_chance(s, n) for n in s.neighbours.values()), default=0.0),
         _raid,
         _raid_resolve,
+        answers=("answer_raid", "avenge_raid", "help_camp"),
+        expects=("answer_raid",),
+        penalty=0.06,
     ),
-    EventDef("beast", lambda s, c: 0.04, _beast, _beast_resolve),
-    EventDef("stranger", lambda s, c: 0.07, _stranger, _stranger_resolve),
-    EventDef("lost_child", lambda s, c: 0.04, _lost_child, _lost_child_resolve),
-    EventDef("dying_elder", lambda s, c: 0.06, _dying_elder),
-    EventDef("relative_ill", lambda s, c: 0.12 * c.family_stability, _relative_ill, _ill_resolve),
-    EventDef("sick_neighbour", lambda s, c: 0.07, _sick_neighbour, _ill_resolve),
+    EventDef(
+        "beast",
+        lambda s, c: 0.04,
+        _beast,
+        _beast_resolve,
+        answers=("hunt_beast", "guard_young"),
+        expects=("hunt_beast",),
+        penalty=0.05,
+    ),
+    # near you
+    EventDef(
+        "stranger",
+        lambda s, c: 0.07,
+        _stranger,
+        _stranger_resolve,
+        answers=("welcome_stranger", "send_on"),
+        expects=("welcome_stranger",),
+        penalty=0.05,
+    ),
+    EventDef(
+        "lost_child",
+        lambda s, c: 0.04,
+        _lost_child,
+        _lost_child_resolve,
+        answers=("search",),
+        expects=("search",),
+        penalty=0.05,
+    ),
+    EventDef(
+        "dying_elder",
+        lambda s, c: 0.06,
+        _dying_elder,
+        answers=("sit_with_dying", "ask_memory"),
+        expects=("sit_with_dying",),
+        penalty=0.04,
+    ),
+    EventDef(
+        "relative_ill",
+        lambda s, c: 0.12 * c.family_stability,
+        _relative_ill,
+        _ill_resolve,
+        answers=("tend_relative",),
+        expects=("tend_relative",),
+        penalty=0.08,
+    ),
+    EventDef(
+        "sick_neighbour",
+        lambda s, c: 0.07,
+        _sick_neighbour,
+        _ill_resolve,
+        answers=("tend_relative",),
+        expects=("tend_relative",),
+        penalty=0.04,
+    ),
+    EventDef("idler", lambda s, c: 0.05, _idler, answers=("find_work", "shame_idler")),
+    # what each role meets
+    EventDef(
+        "great_kill",
+        _role("hunter", chance=0.25),
+        _great_kill,
+        answers=("share_evenly", "feed_weak", "best_cut"),
+    ),
+    EventDef(
+        "deep_songs",
+        _role("keeper", chance=0.2),
+        _deep_songs,
+        answers=("teach_deep", "hold_secrets"),
+    ),
+    EventDef(
+        "asks_for_tools",
+        _role("maker", chance=0.3),
+        _asks_for_tools,
+        answers=("make_for", "ask_return", "fine_work"),
+    ),
+    EventDef(
+        "needs_goods",
+        _role("trader", chance=0.3),
+        _needs_goods,
+        answers=("fair_measure", "hard_bargain"),
+    ),
+    # you
     EventDef("illness", lambda s, c: 0.06, _illness),
     EventDef("injury", lambda s, c: 0.04, _injury),
     EventDef("windfall", lambda s, c: 0.04, _windfall),
@@ -372,19 +561,33 @@ EVENTS = [
 ]
 EVENT_DEFS = {e.kind: e for e in EVENTS}
 WHOLE_PEOPLE = {
+    "hunger",
+    "discord",
+    "low_stores",
     "lean_year",
     "rich_year",
+    "plenty",
     "sickness",
     "flood",
     "omen",
     "spark",
-    "hunger",
-    "discord",
     "feud",
     "raid",
     "beast",
 }
-MAX_EVENTS = 4
+LASTING = ("hunger", "discord", "low_stores", "plenty")  # matters that follow the people's state
+MAX_EVENTS = 5
+
+
+def offer(state, char, event):
+    """Fill in which answers this character has, and whether the matter is expected of them."""
+    d = EVENT_DEFS[event.kind]
+    event.answers = [a for a in d.answers if open_to(state, char, ACTIONS[a])]
+    event.expected = any(a in d.expects for a in event.answers)
+    event.penalty = d.penalty if event.expected else 0.0
+    if event.kind == "could_lead" and "back_leader" in event.answers:
+        event.data.setdefault("leader", state.leader.name)
+    return event
 
 
 def generate_events(state, char, whole_people_only=False):
@@ -399,35 +602,49 @@ def generate_events(state, char, whole_people_only=False):
         if rng.random() < e.chance(state, char):
             inst = e.build(state, char, rng)
             if inst:
-                out.append(inst)
+                out.append(offer(state, char, inst))
     return out
 
 
-def obligation_key(index):
-    """Plan entry for answering the event at this index of state.events."""
-    return f"event:{index}"
+def lasting_answers(state, char):
+    """Answers to the matters that follow from the people's state, for a character who
+    is not the player (NPCs act on these without the year's chance events)."""
+    out = []
+    for kind in LASTING:
+        d = EVENT_DEFS[kind]
+        if d.chance(state, char) > 0:
+            out += [ACTIONS[a] for a in d.answers if open_to(state, char, ACTIONS[a])]
+    return out
+
+
+def answer_key(event, action_id):
+    """Plan entry for meeting a matter with one of its answers."""
+    return f"a:{event.key}:{action_id}"
+
+
+def taken_answers(event, plan):
+    prefix = f"a:{event.key}:"
+    return [k[len(prefix) :] for k in plan if k and k.startswith(prefix)]
+
+
+def unmet(state):
+    """Matters expected of the player that nothing in the plan answers."""
+    return [e for e in state.events if e.expected and not taken_answers(e, state.plan)]
 
 
 def resolve_events(state, plan):
-    """Settle this year's obligations given the year's plan. Returns (log lines, karma change).
+    """Settle this year's matters given the year's plan. Returns (log lines, karma change).
 
-    An obligation is met by choosing its event entry, by choosing the same action
-    directly, or by one of the event's alternative answers (which carry their own
-    karma).
+    An expected matter is met by any of its answers (each carries its own karma);
+    ignoring it costs its penalty.
     """
     rng = state.rng()
     notes = []
     karma = 0.0
-    for i, event in enumerate(state.events):
-        answers = {obligation_key(i), event.obligation, *event.data.get("also", [])}
-        taken_with = [k for k in plan if k in answers]
-        event.data["taken_with"] = [
-            event.obligation if k == obligation_key(i) else k for k in taken_with
-        ]
-        if not event.obligation:
-            continue
-        taken = bool(taken_with)
-        if not taken:
+    for event in state.events:
+        event.data["taken_with"] = taken_answers(event, plan)
+        taken = bool(event.data["taken_with"])
+        if event.expected and not taken:
             karma -= event.penalty
         resolver = EVENT_DEFS[event.kind].resolve
         if resolver:

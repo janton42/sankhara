@@ -60,13 +60,9 @@ WORK_NAMES = {
     "paths": "paths to the other camps",
 }
 SECTIONS = {
-    "obligation": "Expected of you",
-    "continue": "What you are working on",
-    "join": "The people's works under way",
-    "rally": "Call others to your work",
-    "project": "Begin something for the people",
-    "personal": "For yourself and your family",
-    "deed": "This year",
+    "works": "The people's works",
+    "matters": "Matters at hand",
+    "own": "Your own",
 }
 WORKS_SHOWN = 6
 
@@ -257,11 +253,18 @@ class ChooserPopup(Popup):
         self.slot = slot
         self.on_pick = on_pick
         widgets = []
-        section = None
+        section = matter = None
         for opt in game.options(state):
-            if opt.kind != section:
-                section = opt.kind
+            if opt.group != section:
+                section = opt.group
                 widgets.append(WrapLabel(text=heading(SECTIONS[section]), font_size=14))
+            if opt.kind == "answer" and opt.event_index != matter:
+                # each matter once, with its answers beneath it
+                matter = opt.event_index
+                text = opt.blurb
+                if opt.expected:
+                    text = f"[color={ACCENT_HEX}]{text}  (expected of you)[/color]"
+                widgets.append(WrapLabel(text=text, font_size=14))
             widgets.append(self._row(opt))
         content = BoxLayout(orientation="vertical", spacing=4, padding=[8, 8])
         content.add_widget(_scrolling(widgets))
@@ -298,9 +301,7 @@ class ChooserPopup(Popup):
             about = opt.project.definition.id == "pursue"
             cost = f"{years_text(opt.years, about=about)}  ·  {cost} a year"
         name = f"[b]{opt.name}[/b]"
-        if opt.kind == "obligation":
-            name = f"[color={ACCENT_HEX}]{name}[/color]  {muted(opt.blurb)}"
-        elif opt.thread:
+        if opt.thread:
             worked = ", ".join(opt.project.worked_by)
             name = f"[color={ACCENT_HEX}]{name}[/color]  {muted('worked on by ' + worked)}"
         detail = muted(f"{opt.text}  ·  {cost}")
@@ -413,14 +414,17 @@ class YearPanel(BoxLayout):
         nation = state.nation
         self.year_label.text = heading(f"Year {state.year}")
         if state.events:
-            self.events_label.text = "\n".join(f"• {e.text}" for e in state.events)
+            self.events_label.text = "\n".join(
+                f"[color={ACCENT_HEX}]•[/color] {e.text}" if e.expected else f"• {e.text}"
+                for e in state.events
+            )
         else:
             self.events_label.text = muted("Nothing out of the ordinary.")
         for i, btn in enumerate(self.slot_buttons):
             key = state.plan[i] if i < len(state.plan) else None
             opt = game.option_for(state, key) if key else None
             if opt:
-                mark = f"[color={ACCENT_HEX}]•[/color] " if opt.kind == "obligation" else ""
+                mark = f"[color={ACCENT_HEX}]•[/color] " if opt.expected else ""
                 text = f"{mark}{opt.name}"
                 if opt.kind == "continue":
                     p = opt.project
@@ -441,15 +445,7 @@ class YearPanel(BoxLayout):
             left = ""
         left += f"Your family after plans: {budget_text(own, nation)}"
         lines = [muted(left)]
-        unmet = [
-            e
-            for i, e in enumerate(state.events)
-            if e.obligation
-            and f"event:{i}" not in state.plan
-            and e.obligation not in state.plan
-            and not any(k in state.plan for k in e.data.get("also", []))
-        ]
-        if unmet:
+        if game.unmet(state):
             lines.append(f"[color={ACCENT_HEX}]Something is expected of you this year.[/color]")
         self.left_label.text = "\n".join(lines)
         self.notice_label.text = "\n".join(

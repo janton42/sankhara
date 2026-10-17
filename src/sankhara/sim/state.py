@@ -175,9 +175,15 @@ class EventInstance:
     text: str
     settlement_id: int | None = None
     target_id: int | None = None
-    obligation: str | None = None  # action id expected of the player this year
-    penalty: float = 0.0  # karma cost of ignoring the obligation
+    answers: list[str] = field(default_factory=list)  # ways the player could meet it
+    expected: bool = False  # something is expected of the player: ignoring it weighs
+    penalty: float = 0.0  # karma cost of ignoring it when expected
     data: dict = field(default_factory=dict)
+
+    @property
+    def key(self):
+        """Stable across years, so an answer can be kept up while the matter lasts."""
+        return f"{self.kind}:{self.settlement_id or ''}:{self.target_id or ''}"
 
 
 @dataclass

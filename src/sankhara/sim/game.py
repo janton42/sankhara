@@ -2,7 +2,7 @@
 the current character; when a life ends, the next begins somewhere else among the
 same people.
 
-The UI only talks to this module: `new_game`, `options`, `choose`, `affordable`,
+The UI only talks to this module: `new_game`, `options`, `choose`, `affordable`, `unmet`,
 `remaining_budget`, `end_year`, `choose_form`, `begin_next_life` and `threads`.
 """
 
@@ -13,8 +13,8 @@ from sankhara.constants.config import CULTURE_GROUPS
 from sankhara.core.game_engine import new_seed
 from sankhara.entities.namer import make_family_name
 from sankhara.sim import discoveries, projects, tendencies
-from sankhara.sim.actions import ACTIONS, Ctx, actions_for, budget_for, effective_cost
-from sankhara.sim.events import generate_events, obligation_key, resolve_events
+from sankhara.sim.actions import ACTIONS, Ctx, budget_for, cares_for, effective_cost
+from sankhara.sim.events import answer_key, generate_events, resolve_events, unmet
 from sankhara.sim.nation import (
     capacity,
     economy_year,
@@ -184,9 +184,9 @@ def _how_you_came_to_lead(state, leader, rng):
 class Option:
     """Something the player could give a slot of attention to this year."""
 
-    key: str  # plan entry: "event:<i>", "p:<id>", "join:<id>", "rally:<id>", "new:<kind>:<target>"
-    # or a deed id
-    kind: str  # "obligation", "continue", "join", "rally", "project", "personal" or "deed"
+    key: str  # plan entry: "a:<matter>:<action>", "p:<id>", "join:<id>", "rally:<id>",
+    # "new:<kind>:<target>" or a care's action id
+    kind: str  # "answer", "continue", "join", "rally", "project", "personal" or "care"
     name: str
     text: str
     cost: dict  # per year
@@ -197,8 +197,20 @@ class Option:
     blurb: str = ""
     action: object = None
     project: object = None  # a ProjectOption (new) or Project (continue, join, rally)
-    event_index: int | None = None
+    event_index: int | None = None  # the matter an answer meets
+    expected: bool = False  # an answer to a matter expected of the player
     thread: bool = False  # something an earlier life of the player's worked on
+
+    @property
+    def group(self):
+        """Where the chooser shows it: "works", "matters" or "own"."""
+        if self.kind == "answer":
+            return "matters"
+        if self.kind in ("personal", "care"):
+            return "own"
+        if self.kind == "continue" and not self.project.common:
+            return "own"
+        return "works"
 
 
 @dataclass
@@ -247,33 +259,15 @@ def committed(state):
 
 
 def options(state):
-    """Everything the player can choose this year: what's expected, what they're already doing,
-    the people's works they could join, new undertakings, and this year's deeds."""
+    """Everything the player can give a slot to this year, in three groups: the matters at
+    hand (expected ones first), the people's works (what they are working on, could join,
+    call others to or begin) and their own (personal undertakings and lasting cares)."""
     player = state.player
-    out = []
-    for i, event in enumerate(state.events):
-        if event.obligation:
-            action = ACTIONS[event.obligation]
-            out.append(
-                Option(
-                    obligation_key(i),
-                    "obligation",
-                    action.name,
-                    action.text,
-                    effective_cost(state, player, action),
-                    _pull(player, action.tags),
-                    action.tags,
-                    _scope(state, player, action),
-                    blurb=event.text,
-                    action=action,
-                    event_index=i,
-                )
-            )
-    mine = committed(state)
-    for _, project in mine:
+    works, own = [], []
+    for _, project in committed(state):
         d = projects.PROJECTS[project.kind]
         leading = project.leader_id == player.id
-        out.append(
+        (works if project.common else own).append(
             Option(
                 f"p:{project.id}",
                 "continue",
@@ -324,12 +318,16 @@ def options(state):
             "own",
             project=project,
         )
-        for _, project in mine
+        for _, project in committed(state)
         if project.common
     ]
     new, personal = [], []
+    offered = set()
     for o in projects.options_for(state, player):
         d = o.definition
+        if d.id != "pursue" and d.id in offered:
+            continue  # one of each kind of work, where it is needed most; ideas each their own
+        offered.add(d.id)
         (new if d.common else personal).append(
             Option(
                 _new_key(o),
@@ -344,11 +342,36 @@ def options(state):
                 project=o,
             )
         )
-    obligated = {o.action.id for o in out if o.action}
-    deeds = [
+    new.sort(key=lambda o: -o.pull)
+    personal.sort(key=lambda o: -o.pull)
+
+    matters = []
+    order = sorted(range(len(state.events)), key=lambda i: not state.events[i].expected)
+    for i in order:
+        event = state.events[i]
+        answers = [ACTIONS[a] for a in event.answers]
+        answers.sort(key=lambda a: -_pull(player, a.tags))
+        for action in answers:
+            matters.append(
+                Option(
+                    answer_key(event, action.id),
+                    "answer",
+                    action.label(event),
+                    action.text,
+                    effective_cost(state, player, action),
+                    _pull(player, action.tags),
+                    action.tags,
+                    _scope(state, player, action),
+                    blurb=event.text,
+                    action=action,
+                    event_index=i,
+                    expected=event.expected,
+                )
+            )
+    cares = [
         Option(
             a.id,
-            "deed",
+            "care",
             a.name,
             a.text,
             effective_cost(state, player, a),
@@ -357,13 +380,10 @@ def options(state):
             _scope(state, player, a),
             action=a,
         )
-        for a in actions_for(state, player)
-        if a.id not in obligated
+        for a in cares_for(state, player)
     ]
-    new.sort(key=lambda o: -o.pull)
-    personal.sort(key=lambda o: -o.pull)
-    deeds.sort(key=lambda o: -o.pull)
-    return out + joins + rallies + new + personal + deeds
+    cares.sort(key=lambda o: -o.pull)
+    return matters + works + joins + rallies + new + own + personal + cares
 
 
 def option_for(state, key):
@@ -403,14 +423,16 @@ def choose(state, slot, key):
 
 
 def begin_year(state, carry=()):
-    """A new year. What the player is working on keeps its slot, and deeds they chose last
-    year are kept up if they still can be; nothing else is chosen for them.
+    """A new year. What the player is working on keeps its slot, cares they chose last year
+    are kept up if they still can be, and so is an answer to a matter that is still at hand;
+    nothing else is chosen for them.
 
     Returns the names of deeds that could not be kept up.
     """
     state.modifiers = {}
     state.events = generate_events(state, state.player)
-    return replan(state, [key if key in ACTIONS else None for key in carry])
+    keep = [key if key and (key in ACTIONS or key.startswith("a:")) else None for key in carry]
+    return replan(state, keep)
 
 
 def replan(state, keys):
@@ -464,11 +486,11 @@ def end_year(state, attended=True):
     for slot, opt in chosen:
         if opt is None:
             continue
-        if opt.kind in ("deed", "obligation"):
-            event = state.events[opt.event_index] if opt.kind == "obligation" else None
+        if opt.kind in ("care", "answer"):
+            event = state.events[opt.event_index] if opt.kind == "answer" else None
             budget_for(state, player, opt.action).spend(opt.cost)
             result = opt.action.effect(Ctx(state, player, rng, event))
-            lines.append(f"{opt.action.name}: {result}")
+            lines.append(f"{opt.name}: {result}")
             karma += opt.action.karma
             tendencies.strengthen(player.tendencies, opt.tags)
             continue
@@ -508,9 +530,9 @@ def end_year(state, attended=True):
     elif not any(state.plan):
         karma += DRIFTED_KARMA
 
-    notes, obligation_karma = resolve_events(state, state.plan)
+    notes, matter_karma = resolve_events(state, state.plan)
     lines += notes
-    karma += obligation_karma
+    karma += matter_karma
     state.soul.karma = tendencies.clamp(state.soul.karma + KARMA_SCALE * karma)
 
     if state.pending_choice:
@@ -545,7 +567,7 @@ def end_year(state, attended=True):
         dropped = begin_year(state, carry)
         if dropped:
             interrupts.append(f"You could not keep up: {', '.join(dropped).lower()}.")
-        if any(e.obligation for e in state.events):
+        if unmet(state):
             interrupts.append("Something is expected of you.")
         if state.pending_choice:
             name = discoveries.DISCOVERIES[state.pending_choice].name.lower()

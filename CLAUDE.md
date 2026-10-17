@@ -2,8 +2,8 @@
 
 A people over generations (Python 3.12, Kivy), played one life at a time: it
 starts as a small band with no farming, trade or money; each turn is a year; the
-player acts as one character with 3 attention slots (deeds or multi-year
-projects, all optional) and their role's means, and on death continues as someone
+player acts as one character with 3 attention slots (all optional: answers to
+matters at hand, the people's works, or their own cares and undertakings) and their role's means, and on death continues as someone
 new among the same people. The years run on a clock the player can pause; only
 pop-ups hold it. Leadership is earned, not inherited (unless the people adopt
 lineage). Any role can shape the people through the people's works
@@ -12,7 +12,7 @@ are settled. Buddhist ideas (karma, rebirth, saṅkhāra) are modelled but
 never named in-game, nor in the README, About text or other descriptions, and
 nothing says there is no winning. Design: `docs/concepts.md` (check it for new
 notes every session). Next: M2 = policy and more development; M3 = detailed NPCs
-and politics. The attention choices need their own design pass.
+and politics.
 
 ## Commands
 
@@ -23,7 +23,7 @@ and politics. The attention choices need their own design pass.
 
 ## Layout
 
-- `src/sankhara/sim/`: the game itself, pure Python (no Kivy): `state.py` dataclasses + JSON round-trip, `game.py` yearly loop/interrupts/new game/next life, `discoveries.py` (the web of ideas and their forms), `projects.py` (multi-year), `actions.py` (one-year deeds), `events.py`, `nation.py` (the people's food, stores, cohesion), `people.py`, `peoples.py` (other peoples), `npc.py`, `tendencies.py`, `stations.py` (roles), `save.py`
+- `src/sankhara/sim/`: the game itself, pure Python (no Kivy): `state.py` dataclasses + JSON round-trip, `game.py` yearly loop/interrupts/new game/next life, `discoveries.py` (the web of ideas and their forms), `projects.py` (multi-year), `actions.py` (one-year deeds: cares and answers), `events.py` (news and matters at hand), `nation.py` (the people's food, stores, cohesion), `people.py`, `peoples.py` (other peoples), `npc.py`, `tendencies.py`, `stations.py` (roles), `save.py`
 - `src/sankhara/ui/`: Kivy only reads state and calls `sim.game` (`options`, `choose`, `affordable`, `remaining_budget`, `end_year`, `choose_form`, `begin_next_life`, `threads`); `words.py` maps numbers to words; `theme.py` palette and widgets
 - `src/sankhara/world/`: map generation and `hexgrid.py`; `constants/config.py`: map/biome/culture tunables
 - `tests/test_sim/` covers the rules; `tests/test_ui.py` drives the real widgets headless
