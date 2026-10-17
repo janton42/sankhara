@@ -2,10 +2,12 @@ from sankhara.entities.lineage import Family
 from sankhara.entities.player import Player
 from sankhara.entities.player_state import PlayerState
 
+HOME_TILE = {"id": 1, "biome": "Hill Forest"}
+
 
 class DummyFamily(Family):
     def __init__(self, family_id="fam1", tribe=None):
-        super().__init__(family_id, tribe)
+        super().__init__(family_id, HOME_TILE, tribe)
 
 
 def test_playerstate_init():
