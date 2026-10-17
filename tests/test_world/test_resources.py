@@ -1,8 +1,11 @@
-import sys
-import os
-
 import pytest
-from sankhara.world.resources import calculate_extraction_efficiency, extract_resource, regenerate_resources
+
+from sankhara.world.resources import (
+    calculate_extraction_efficiency,
+    extract_resource,
+    regenerate_resources,
+)
+
 
 def test_extraction_efficiency_diminishing_returns():
     eff1 = calculate_extraction_efficiency(1, 1.0, 1.0)
@@ -17,16 +20,21 @@ def test_extraction_efficiency_diminishing_returns():
     assert (eff100 - eff10) >= (eff1000 - eff100) - eps
     assert (eff1000 - eff100) >= (eff10000 - eff1000) - eps
 
+
 def test_extraction_efficiency_tool_tech():
     eff_low = calculate_extraction_efficiency(10, 0.5, 0.5)
     eff_high = calculate_extraction_efficiency(10, 2.0, 2.0)
     assert eff_high > eff_low
 
+
 def test_extract_resource_limits():
     tile = {"plant_food": 0.5}
-    amt, updated = extract_resource(tile.copy(), "plant_food", 10, 1.0, 1.0, max_extract_per_turn=0.2)
+    amt, updated = extract_resource(
+        tile.copy(), "plant_food", 10, 1.0, 1.0, max_extract_per_turn=0.2
+    )
     assert amt <= 0.2
     assert updated["plant_food"] == pytest.approx(0.5 - amt)
+
 
 def test_regenerate_resources():
     tile = {"plant_food": 0.5, "tool_materials": 0.5}
@@ -38,6 +46,7 @@ def test_regenerate_resources():
     assert updated["plant_food"] <= 1.0
     assert updated["tool_materials"] == 0.5
 
+
 def test_regenerate_resources_saturates():
     tile = {"plant_food": 0.98}
     regen = {"plant_food": 0.1}
@@ -45,4 +54,3 @@ def test_regenerate_resources_saturates():
     max_vals = {"plant_food": 1.0}
     updated = regenerate_resources(tile.copy(), regen, renewable, max_vals)
     assert updated["plant_food"] <= 1.0
-

@@ -1,6 +1,5 @@
 # resource types, storage, consumption mechanics.
 
-import math
 
 def calculate_extraction_efficiency(labor, tool_quality, tech_level, labor_half=10):
     """
@@ -17,7 +16,10 @@ def calculate_extraction_efficiency(labor, tool_quality, tech_level, labor_half=
     efficiency = labor_effect * tool_quality * tech_level
     return efficiency
 
-def extract_resource(tile_resources, resource_type, labor, tool_quality, tech_level, max_extract_per_turn=1.0):
+
+def extract_resource(
+    tile_resources, resource_type, labor, tool_quality, tech_level, max_extract_per_turn=1.0
+):
     """
     Extracts resource from a tile's resource pool.
     - tile_resources: dict of resource pools for the tile
@@ -32,6 +34,7 @@ def extract_resource(tile_resources, resource_type, labor, tool_quality, tech_le
     extract_amount = min(available, max_extract_per_turn * efficiency)
     tile_resources[resource_type] = max(0, available - extract_amount)
     return extract_amount, tile_resources
+
 
 def regenerate_resources(tile_resources, resource_regen, resource_renewable, resource_max):
     """
@@ -50,4 +53,3 @@ def regenerate_resources(tile_resources, resource_regen, resource_renewable, res
         else:
             tile_resources[res] = max(0, val)  # Non-renewables do not regenerate
     return tile_resources
-

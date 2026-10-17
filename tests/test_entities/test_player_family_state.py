@@ -1,9 +1,6 @@
-import sys
-import os
-
+from sankhara.entities.lineage import Family
 from sankhara.entities.player import Player
 from sankhara.entities.player_state import PlayerState
-from sankhara.entities.lineage import Family
 
 
 class DummyFamily(Family):

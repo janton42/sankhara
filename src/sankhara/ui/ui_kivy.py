@@ -1,20 +1,22 @@
 import random
+
+from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
-from kivy.uix.label import Label
 from kivy.uix.dropdown import DropDown
-from kivy.app import App
+from kivy.uix.label import Label
+
+from sankhara.constants.config import ACTIONS
+from sankhara.core.turn_manager import process_player_actions, regenerate_resources
+from sankhara.entities.lineage import Family
 from sankhara.entities.player import Player
 from sankhara.entities.player_state import PlayerState
-from sankhara.entities.lineage import Family
-from sankhara.ui.screens.info_panel import format_tile_info, format_player_info
-from sankhara.constants.config import ACTIONS
-from sankhara.core.turn_manager import regenerate_resources, process_player_actions
+from sankhara.ui.screens.info_panel import format_player_info, format_tile_info
 
 
 class InfoPanel(BoxLayout):
     def __init__(self, **kwargs):
-        super().__init__(orientation='vertical', **kwargs)
+        super().__init__(orientation="vertical", **kwargs)
         self.player = None
         self.spacing = 10
         self.padding = [10, 10, 10, 10]
@@ -28,12 +30,14 @@ class InfoPanel(BoxLayout):
         self.start_button = Button(text="Start Game", size_hint_y=None, height=40)
         self.start_button.bind(on_press=self.on_start_game_wrapper)
         # Action dropdowns
-        self.action_box = BoxLayout(orientation='horizontal', size_hint_y=None, height=60, spacing=0)
+        self.action_box = BoxLayout(
+            orientation="horizontal", size_hint_y=None, height=60, spacing=0
+        )
         self.action_dropdowns = []
         self.selected_actions = [None, None, None, None]
         self.choice_labels = []
         for i in range(4):
-            vbox = BoxLayout(orientation='vertical', size_hint_x=1, spacing=0)
+            vbox = BoxLayout(orientation="vertical", size_hint_x=1, spacing=0)
             dropdown = DropDown()
             main_button = Button(text=f"Action {i + 1}", size_hint_y=None, height=35, disabled=True)
             self.populate_dropdown(dropdown, main_button, i)
@@ -51,18 +55,22 @@ class InfoPanel(BoxLayout):
 
     def populate_dropdown(self, dropdown, main_button, idx):
         dropdown.clear_widgets()
-        used_ids = set(a['id'] for a in self.selected_actions if a)
+        used_ids = set(a["id"] for a in self.selected_actions if a)
         for action in ACTIONS:
-            if not action['repeatable'] and action['id'] in used_ids:
+            if not action["repeatable"] and action["id"] in used_ids:
                 continue
             btn = Button(text=f"{action['name']} ({action['hours']}h)", size_hint_y=None, height=35)
             btn.action_data = action
-            btn.bind(on_release=lambda btn, mb=main_button, dd=dropdown, i=idx: self.select_action(btn, mb, dd, i))
+            btn.bind(
+                on_release=lambda btn, mb=main_button, dd=dropdown, i=idx: self.select_action(
+                    btn, mb, dd, i
+                )
+            )
             dropdown.add_widget(btn)
 
     def on_start_game_wrapper(self, instance):
         # Pick a random tile from the map
-        if not hasattr(self, 'game_map') or not self.game_map:
+        if not hasattr(self, "game_map") or not self.game_map:
             return
         flat_tiles = [tile for col in self.game_map for tile in col]
         tile = random.choice(flat_tiles)
@@ -93,7 +101,7 @@ class InfoPanel(BoxLayout):
         self.update_dropdown_states()
 
     def update_dropdown_states(self):
-        total_hours = sum(a['hours'] for a in self.selected_actions if a)
+        total_hours = sum(a["hours"] for a in self.selected_actions if a)
         for i, (main_button, dropdown, _) in enumerate(self.action_dropdowns):
             if self.selected_actions[i]:
                 continue
@@ -101,8 +109,14 @@ class InfoPanel(BoxLayout):
             remaining = 24 - total_hours
             self.populate_dropdown(dropdown, main_button, i)
             # Disable if no actions fit
-            has_valid = any(action['hours'] <= remaining for action in ACTIONS if
-                            (action['repeatable'] or action['id'] not in [a['id'] for a in self.selected_actions if a]))
+            has_valid = any(
+                action["hours"] <= remaining
+                for action in ACTIONS
+                if (
+                    action["repeatable"]
+                    or action["id"] not in [a["id"] for a in self.selected_actions if a]
+                )
+            )
             main_button.disabled = not has_valid or remaining <= 0
         # If any selected action puts us over 24, disable all others
         if total_hours > 24:
@@ -117,7 +131,7 @@ class InfoPanel(BoxLayout):
         self.turn += 1
         self.turn_label.text = f"Turn: {self.turn}"
         actions_taken = [a["id"] for a in self.selected_actions if a]
-        if hasattr(self, 'game_map') and self.player:
+        if hasattr(self, "game_map") and self.player:
             regenerate_resources(self.game_map)
             process_player_actions(self.player, actions_taken)
         for i, (main_button, dropdown, label) in enumerate(self.action_dropdowns):
@@ -131,7 +145,7 @@ class InfoPanel(BoxLayout):
         self.player_label.text = format_player_info(self)
         if self.player and self.player.state.health <= 0:
             app = App.get_running_app()
-            if hasattr(app, 'game_over'):
+            if hasattr(app, "game_over"):
                 app.game_over()
 
     def update_tile_info(self, tile):
