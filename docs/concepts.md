@@ -25,3 +25,14 @@ new family); how karma drives rebirth is still to be designed.
 
 - How karma maps to the next birth (species, family, location).
 - Whether NPCs share the same karma model.
+
+
+## User Notes
+- Original conversation is lost.
+- The game overall is supposed to be a nation builder that does not focus
+on war and army building. It's supposed to be a strategy game with resource
+mangament, policy/government management, scientific and cultural development
+but without armies and war being the main goal.
+- The Karma and rebirth cycle was inspired by the mechanics of the leader in games
+like Europa Universalis, in which the player is in charge of a country, but the leaders
+are born and die throughout the game, and lineage is an import aspect of holding power.
