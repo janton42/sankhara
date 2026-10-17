@@ -1,6 +1,13 @@
 import random
-from constants.config import ELEVATION_NOISE, MAP_HEIGHT, MAP_WIDTH, MOISTURE_NOISE
-from world.map_gen import assign_biome, assign_resources, generate_perlin_noise, normalize, map_biome_abbr
+
+from sankhara.constants.config import ELEVATION_NOISE, MAP_HEIGHT, MAP_WIDTH, MOISTURE_NOISE
+from sankhara.world.map_gen import (
+    assign_biome,
+    assign_resources,
+    generate_perlin_noise,
+    map_biome_abbr,
+    normalize,
+)
 
 
 def coin_flip():

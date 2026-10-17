@@ -1,11 +1,19 @@
+from kivy.graphics import Color, Line
 from kivy.uix.screenmanager import Screen
-from kivy.graphics import Color, Line, Rectangle
 from kivy.uix.widget import Widget
-from kivy.core.text import Label as CoreLabel
-from constants.config import (
-    HEX_WIDTH, HEX_HEIGHT, HEX_HORIZONTAL_SPACING, HEX_VERTICAL_SPACING, HEX_ORIENTATION,
-    HEX_EDGE_LENGTH, MAP_WIDTH, MAP_HEIGHT, BIOME_COLORS
+
+from sankhara.constants.config import (
+    BIOME_COLORS,
+    HEX_EDGE_LENGTH,
+    HEX_HEIGHT,
+    HEX_HORIZONTAL_SPACING,
+    HEX_ORIENTATION,
+    HEX_VERTICAL_SPACING,
+    HEX_WIDTH,
+    MAP_HEIGHT,
+    MAP_WIDTH,
 )
+
 
 class MapScreen(Screen):
     def __init__(self, on_tile_selected_callback=None, **kwargs):
@@ -27,23 +35,23 @@ class MapScreen(Screen):
                     biome = tile.get("biome", "")
                     color = BIOME_COLORS.get(biome, (1, 1, 1, 1))
                     self.draw_hex(x, y, color)
-                    abbr = tile.get("abbr", "")
-                    if abbr:
-                        label = CoreLabel(text=abbr, font_size=12)
-                        label.refresh()
-                        texture = label.texture
-                        Rectangle(
-                            texture=texture,
-                            pos=(x - texture.size[0] / 2, y - texture.size[1] / 2),
-                            size=texture.size
-                        )
+                    # abbr = tile.get("abbr", "")
+                    # if abbr:
+                    #     label = CoreLabel(text=abbr, font_size=12)
+                    #     label.refresh()
+                    #     texture = label.texture
+                    #     Rectangle(
+                    #         texture=texture,
+                    #         pos=(x - texture.size[0] / 2, y - texture.size[1] / 2),
+                    #         size=texture.size
+                    #     )
 
     def draw_hex(self, x, y, color):
         Color(*color)
         Line(points=self.hex_points(x, y), width=1)
 
     def get_tile_position(self, q, r):
-        if HEX_ORIENTATION == 'pointy':
+        if HEX_ORIENTATION == "pointy":
             x = q * HEX_HORIZONTAL_SPACING
             y = r * HEX_VERTICAL_SPACING + (q % 2) * (HEX_VERTICAL_SPACING / 2)
         else:
@@ -52,8 +60,9 @@ class MapScreen(Screen):
         return x, y
 
     def hex_points(self, x, y):
-        from math import cos, sin, pi
-        angle_offset = pi / 6 if HEX_ORIENTATION == 'pointy' else 0
+        from math import cos, pi, sin
+
+        angle_offset = pi / 6 if HEX_ORIENTATION == "pointy" else 0
         points = []
         for i in range(6):
             angle = 2 * pi * i / 6 + angle_offset

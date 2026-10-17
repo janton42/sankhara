@@ -1,0 +1,47 @@
+[project]
+name = "sankhara"
+version = "0.1.0"
+description = "A turn-based hex-map world game built around Buddhist concepts of karma, rebirth, and lineage."
+readme = "README.md"
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE"]
+authors = [{ name = "Jeff Stock" }]
+requires-python = ">=3.12"
+dependencies = [
+    "kivy>=2.3.1",
+    "noise>=1.2.2",
+    "numpy>=2.2",
+]
+
+[project.scripts]
+sankhara = "sankhara.app:main"
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.0",
+    "pytest>=8.4",
+    "pytest-cov>=6.1",
+    "ruff>=0.12",
+]
+docs = [
+    "mkdocs>=1.6,<2",  # MkDocs 2.0 drops theme/plugin support Material relies on
+    "mkdocs-material>=9.6",
+]
+
+[build-system]
+requires = ["uv_build>=0.8,<0.14"]
+build-backend = "uv_build"
+
+[tool.uv]
+default-groups = ["dev"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--cov=sankhara --cov-report=term-missing"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

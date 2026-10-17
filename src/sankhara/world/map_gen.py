@@ -1,15 +1,16 @@
-import numpy as np
-from noise import pnoise2
 import random
 
-from constants.config import (
+import numpy as np
+from noise import pnoise2
+
+from sankhara.constants.config import (
+    BIOME_RESOURCE_BASELINES,
+    ELEVATION_ABBR,
     ELEVATION_THRESHOLDS,
+    MOISTURE_ABBR,
     MOISTURE_THRESHOLDS,
     RESOURCE_TYPES,
-    BIOME_RESOURCE_BASELINES,
     RESOURCE_VARIATION_PERCENTAGE,
-    ELEVATION_ABBR,
-    MOISTURE_ABBR,
 )
 
 
@@ -20,17 +21,24 @@ def generate_perlin_noise(width, height, params):
     lacunarity = params["lacunarity"]
     seed = params["seed"]
 
-    return np.array([
-        [pnoise2((x + seed) / scale, (y + seed) / scale,
-                 octaves=octaves,
-                 persistence=persistence,
-                 lacunarity=lacunarity,
-                 repeatx=1024,
-                 repeaty=1024,
-                 base=0)
-         for y in range(height)]
-        for x in range(width)
-    ])
+    return np.array(
+        [
+            [
+                pnoise2(
+                    (x + seed) / scale,
+                    (y + seed) / scale,
+                    octaves=octaves,
+                    persistence=persistence,
+                    lacunarity=lacunarity,
+                    repeatx=1024,
+                    repeaty=1024,
+                    base=0,
+                )
+                for y in range(height)
+            ]
+            for x in range(width)
+        ]
+    )
 
 
 def normalize(array):
@@ -42,8 +50,8 @@ def normalize(array):
 
 
 def assign_biome(elevation, moisture):
-    landform = ''
-    vegetation = ''
+    landform = ""
+    vegetation = ""
     for formation in ELEVATION_THRESHOLDS:
         elev_min, elev_max = ELEVATION_THRESHOLDS[formation]
         if elev_min <= elevation <= elev_max:
@@ -54,11 +62,11 @@ def assign_biome(elevation, moisture):
         if moist_min <= moisture <= moist_max:
             vegetation = veg
             break
-    if landform == '':
-        landform = 'Not Hotdog'
-    if vegetation == '':
-        vegetation = 'Not Hotdog'
-    biome = landform + ' ' + vegetation
+    if landform == "":
+        landform = "Not Hotdog"
+    if vegetation == "":
+        vegetation = "Not Hotdog"
+    biome = landform + " " + vegetation
     return biome
 
 
@@ -71,8 +79,9 @@ def assign_resources(biome):
         resources[res] = val + random.uniform(-variation, variation)
     return resources
 
+
 def map_biome_abbr(biome):
-    parts = biome.split(' ')
+    parts = biome.split(" ")
     e = parts[0]
     m = parts[-1]
     abbr = ELEVATION_ABBR[e] + MOISTURE_ABBR[m]

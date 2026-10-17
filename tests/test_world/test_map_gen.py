@@ -1,16 +1,21 @@
 # tests/test_world/test_map_gen.py
-import sys
-import os
 import unittest
-import numpy as np
 from unittest.mock import patch
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
+import numpy as np
 
-from core import game_engine
-from world import map_gen
-from constants.config import (MAP_WIDTH, MAP_HEIGHT, ELEVATION_NOISE, RESOURCE_TYPES, RESOURCE_VARIATION_PERCENTAGE,
-                              BIOME_RESOURCE_BASELINES, ELEVATION_ABBR, MOISTURE_ABBR)
+from sankhara.constants.config import (
+    BIOME_RESOURCE_BASELINES,
+    ELEVATION_ABBR,
+    ELEVATION_NOISE,
+    MAP_HEIGHT,
+    MAP_WIDTH,
+    MOISTURE_ABBR,
+    RESOURCE_TYPES,
+    RESOURCE_VARIATION_PERCENTAGE,
+)
+from sankhara.core import game_engine
+from sankhara.world import map_gen
 
 
 def test_generate_perlin_noise_output_shape():
@@ -59,14 +64,14 @@ def test_assign_biome_edge_values():
 def test_assign_biome_empty_string_cases():
     # Elevation and moisture values outside all thresholds
     # Should return 'Not Hotdog Not Hotdog'
-    assert map_gen.assign_biome(-0.5, -0.5) == 'Not Hotdog Not Hotdog'
-    assert map_gen.assign_biome(2.0, 2.0) == 'Not Hotdog Not Hotdog'
+    assert map_gen.assign_biome(-0.5, -0.5) == "Not Hotdog Not Hotdog"
+    assert map_gen.assign_biome(2.0, 2.0) == "Not Hotdog Not Hotdog"
     # Only elevation out of range
-    assert map_gen.assign_biome(-0.5, 0.5) == 'Not Hotdog Grassland'
-    assert map_gen.assign_biome(2.0, 0.5) == 'Not Hotdog Grassland'
+    assert map_gen.assign_biome(-0.5, 0.5) == "Not Hotdog Grassland"
+    assert map_gen.assign_biome(2.0, 0.5) == "Not Hotdog Grassland"
     # Only moisture out of range
-    assert map_gen.assign_biome(0.5, -0.5) == 'Plain Not Hotdog'
-    assert map_gen.assign_biome(0.5, 2.0) == 'Plain Not Hotdog'
+    assert map_gen.assign_biome(0.5, -0.5) == "Plain Not Hotdog"
+    assert map_gen.assign_biome(0.5, 2.0) == "Plain Not Hotdog"
 
 
 def test_map_dimensions():
@@ -79,15 +84,21 @@ def test_tile_structure():
     game_map = game_engine.generate_map()
     for row in game_map:
         for tile in row:
-            assert 'biome' in tile
-            assert tile['biome'] is not None
-            assert 'resources' in tile
-            assert isinstance(tile['resources'], dict)
+            assert "biome" in tile
+            assert tile["biome"] is not None
+            assert "resources" in tile
+            assert isinstance(tile["resources"], dict)
+
 
 def test_map_biome_abbr():
-    assert map_gen.map_biome_abbr("Mountain Forest") == ELEVATION_ABBR['Mountain'] + MOISTURE_ABBR['Forest']
-    assert map_gen.map_biome_abbr("Lowland Saltflat") == ELEVATION_ABBR['Lowland'] + MOISTURE_ABBR['Saltflat']
-
+    assert (
+        map_gen.map_biome_abbr("Mountain Forest")
+        == ELEVATION_ABBR["Mountain"] + MOISTURE_ABBR["Forest"]
+    )
+    assert (
+        map_gen.map_biome_abbr("Lowland Saltflat")
+        == ELEVATION_ABBR["Lowland"] + MOISTURE_ABBR["Saltflat"]
+    )
 
 
 def test_resources_present():
@@ -95,8 +106,8 @@ def test_resources_present():
     for row in game_map:
         for tile in row:
             for resource in RESOURCE_TYPES:
-                assert resource in tile['resources']
-                assert isinstance(tile['resources'][resource], (int, float))
+                assert resource in tile["resources"]
+                assert isinstance(tile["resources"][resource], (int, float))
 
 
 def test_map_size_matches_config():
@@ -117,20 +128,55 @@ def test_all_tiles_have_coords():
 def test_biome_is_valid():
     game_map = game_engine.generate_map()
     valid_biomes = {
-        "Mountain Wetland", "Mountain Forest", "Mountain Shrubland", "Mountain Grassland", "Mountain Steppe",
-        "Mountain Desert", "Mountain Saltflat",
-        "Highland Wetland", "Highland Forest", "Highland Shrubland", "Highland Grassland", "Highland Steppe",
-        "Highland Desert", "Highland Saltflat",
-        "Hill Wetland", "Hill Forest", "Hill Shrubland", "Hill Grassland", "Hill Steppe", "Hill Desert",
+        "Mountain Wetland",
+        "Mountain Forest",
+        "Mountain Shrubland",
+        "Mountain Grassland",
+        "Mountain Steppe",
+        "Mountain Desert",
+        "Mountain Saltflat",
+        "Highland Wetland",
+        "Highland Forest",
+        "Highland Shrubland",
+        "Highland Grassland",
+        "Highland Steppe",
+        "Highland Desert",
+        "Highland Saltflat",
+        "Hill Wetland",
+        "Hill Forest",
+        "Hill Shrubland",
+        "Hill Grassland",
+        "Hill Steppe",
+        "Hill Desert",
         "Hill Saltflat",
-        "Plain Wetland", "Plain Forest", "Plain Shrubland", "Plain Grassland", "Plain Steppe", "Plain Desert",
+        "Plain Wetland",
+        "Plain Forest",
+        "Plain Shrubland",
+        "Plain Grassland",
+        "Plain Steppe",
+        "Plain Desert",
         "Plain Saltflat",
-        "Valley Wetland", "Valley Forest", "Valley Shrubland", "Valley Grassland", "Valley Steppe", "Valley Desert",
+        "Valley Wetland",
+        "Valley Forest",
+        "Valley Shrubland",
+        "Valley Grassland",
+        "Valley Steppe",
+        "Valley Desert",
         "Valley Saltflat",
-        "Basin Wetland", "Basin Forest", "Basin Shrubland", "Basin Grassland", "Basin Steppe", "Basin Desert",
+        "Basin Wetland",
+        "Basin Forest",
+        "Basin Shrubland",
+        "Basin Grassland",
+        "Basin Steppe",
+        "Basin Desert",
         "Basin Saltflat",
-        "Lowland Wetland", "Lowland Forest", "Lowland Shrubland", "Lowland Grassland", "Lowland Steppe",
-        "Lowland Desert", "Lowland Saltflat"
+        "Lowland Wetland",
+        "Lowland Forest",
+        "Lowland Shrubland",
+        "Lowland Grassland",
+        "Lowland Steppe",
+        "Lowland Desert",
+        "Lowland Saltflat",
     }
     for col in game_map:
         for tile in col:
@@ -147,10 +193,10 @@ def test_resources_are_valid():
                 assert isinstance(value, (int, float))
                 assert value >= 0
 
-class TestAssignResources(unittest.TestCase):
 
+class TestAssignResources(unittest.TestCase):
     def test_resources_values_within_expected_range(self):
-        biome = 'Mountain Forest'
+        biome = "Mountain Forest"
         base = BIOME_RESOURCE_BASELINES[biome]
         for _ in range(100):
             resources = map_gen.assign_resources(biome)
@@ -160,23 +206,23 @@ class TestAssignResources(unittest.TestCase):
                 self.assertTrue((base_val - variation) <= resources[res] <= (base_val + variation))
 
     def test_unknown_biome_returns_zero_resources(self):
-        biome = 'Unknown Biome'
+        biome = "Unknown Biome"
         resources = map_gen.assign_resources(biome)
         for val in resources.values():
             self.assertEqual(val, 0)
 
-    @patch('random.uniform')
+    @patch("random.uniform")
     def test_random_uniform_called_with_correct_bounds(self, mock_uniform):
-        biome = 'Mountain Desert'
+        biome = "Mountain Desert"
         base = BIOME_RESOURCE_BASELINES[biome]
         map_gen.assign_resources(biome)
         calls = []
         for res in RESOURCE_TYPES:
             val = base.get(res, 0)
             variation = val * RESOURCE_VARIATION_PERCENTAGE
-            calls.append((( -variation, variation),))
+            calls.append(((-variation, variation),))
         actual_calls = [call.args for call in mock_uniform.call_args_list]
         expected_calls = [call[0] for call in calls]
         self.assertEqual(len(actual_calls), len(expected_calls))
-        for actual, expected in zip(actual_calls, expected_calls):
+        for actual, expected in zip(actual_calls, expected_calls, strict=True):
             self.assertEqual(actual, expected)

@@ -1,8 +1,15 @@
-from constants.config import RESOURCE_REGENERATION, RESOURCE_RENEWABLE, BIOME_RESOURCE_BASELINES, ACTIONS
+from sankhara.constants.config import (
+    ACTIONS,
+    BIOME_RESOURCE_BASELINES,
+    RESOURCE_REGENERATION,
+    RESOURCE_RENEWABLE,
+)
+
 
 def regenerate_resources(game_map):
     """
-    Regenerate resources for each tile in the map according to their regeneration rates and renewability.
+    Regenerate resources for each tile in the map according to their regeneration
+    rates and renewability.
     """
     for col in game_map:
         for tile in col:
@@ -17,6 +24,7 @@ def regenerate_resources(game_map):
                     delta = regen_rate * (max_val - value)
                     tile["resources"][resource] = min(max_val, value + delta)
                 # Non-renewables: no regeneration (could add fixed pool logic here if needed)
+
 
 def process_player_actions(player, actions_taken):
     """
