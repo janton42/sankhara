@@ -63,3 +63,24 @@ def pixel_to_tile(x, y, size, cols, rows):
     if 0 <= col < cols and 0 <= row < rows:
         return col, row
     return None
+
+
+def neighbors(col, row):
+    """The six (col, row) neighbours of a tile in odd-r layout (may be off the map)."""
+    if row & 1:
+        deltas = ((1, 0), (-1, 0), (0, -1), (1, -1), (0, 1), (1, 1))
+    else:
+        deltas = ((1, 0), (-1, 0), (-1, -1), (0, -1), (-1, 1), (0, 1))
+    return [(col + dc, row + dr) for dc, dr in deltas]
+
+
+def distance(a, b):
+    """Steps between two (col, row) tiles."""
+
+    def to_cube(col, row):
+        x = col - (row - (row & 1)) // 2
+        return x, -x - row, row
+
+    ax, ay, az = to_cube(*a)
+    bx, by, bz = to_cube(*b)
+    return max(abs(ax - bx), abs(ay - by), abs(az - bz))

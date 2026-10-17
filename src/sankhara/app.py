@@ -1,98 +1,88 @@
+from pathlib import Path
+
 from kivy.app import App
 from kivy.core.window import Window
-from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.screenmanager import FadeTransition, Screen, ScreenManager
 
-from sankhara.core.game_engine import generate_map, new_seed
-from sankhara.ui.screens.game_over import GameOverScreen
+from sankhara.sim import game, save
+from sankhara.ui.game_view import GameView
+from sankhara.ui.screens.life import LifeScreen
 from sankhara.ui.screens.main_menu import MainMenuScreen
-from sankhara.ui.screens.map_view import MapScreen
 from sankhara.ui.theme import BACKGROUND
-from sankhara.ui.ui_kivy import InfoPanel
 
-
-class MainScreen(BoxLayout):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.orientation = "horizontal"
-
-        # Generate and store the game map at the top level; a fresh seed per game
-        self.seed = new_seed()
-        self.game_map = generate_map(self.seed)
-
-        self.left_panel = InfoPanel(size_hint=(0.38, 1), on_life_started=self.on_life_started)
-        self.left_panel.set_game_map(self.game_map, self.seed)
-        self.add_widget(self.left_panel)
-
-        self.map_screen = MapScreen(
-            on_tile_selected_callback=self.on_tile_selected, size_hint=(0.62, 1)
-        )
-        self.map_screen.set_map(self.game_map)
-        self.add_widget(self.map_screen)
-
-    def on_tile_selected(self, tile):
-        self.left_panel.update_tile_info(tile)
-
-    def on_life_started(self, home_tile):
-        self.map_screen.selected_tile = home_tile
-        self.map_screen.set_home(home_tile)
-
-
-class MainMenuKivyScreen(Screen):
-    def __init__(self, switch_to_game_callback, **kwargs):
-        super().__init__(**kwargs)
-        self.menu = MainMenuScreen()
-        self.menu.new_game_btn.bind(on_press=lambda *_: switch_to_game_callback())
-        self.add_widget(self.menu)
-
-
-class GameOverKivyScreen(Screen):
-    def __init__(self, switch_to_menu_callback, **kwargs):
-        super().__init__(**kwargs)
-        self.over = GameOverScreen()
-        self.over.main_menu_btn.bind(on_press=lambda *_: switch_to_menu_callback())
-        self.add_widget(self.over)
-
-
-class MainGameKivyScreen(Screen):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.main_screen = MainScreen()
-        self.add_widget(self.main_screen)
-
-    def reset_game(self):
-        self.clear_widgets()
-        self.main_screen = MainScreen()
-        self.add_widget(self.main_screen)
+SAVE_NAME = "save.json"
 
 
 class SankharaApp(App):
     def build(self):
         self.title = "Sankhara"
-        Window.size = (1200, 740)
-        Window.minimum_width, Window.minimum_height = 900, 600
+        Window.size = (1280, 760)
+        Window.minimum_width, Window.minimum_height = 1000, 640
         Window.clearcolor = BACKGROUND
+        self.state = None
+
+        self.menu = MainMenuScreen()
+        self.menu.new_game_btn.bind(on_release=lambda *_: self.new_game())
+        self.menu.continue_btn.bind(on_release=lambda *_: self.continue_game())
+        self.game_view = GameView(on_life_ended=self.life_ended, on_saved=self.save)
+        self.life = LifeScreen(
+            on_continue=self.next_life, on_begin=self.show_game, on_menu=self.goto_menu
+        )
+
         self.sm = ScreenManager(transition=FadeTransition(duration=0.2))
-        self.menu_screen = MainMenuKivyScreen(self.start_game, name="menu")
-        self.game_screen = MainGameKivyScreen(name="game")
-        self.game_over_screen = GameOverKivyScreen(self.goto_menu, name="gameover")
-        self.sm.add_widget(self.menu_screen)
-        self.sm.add_widget(self.game_screen)
-        self.sm.add_widget(self.game_over_screen)
-        self.sm.current = "menu"
+        for name, widget in (("menu", self.menu), ("game", self.game_view), ("life", self.life)):
+            screen = Screen(name=name)
+            screen.add_widget(widget)
+            self.sm.add_widget(screen)
+        self.goto_menu()
         return self.sm
 
-    def start_game(self):
-        # Reset game state (map, player, etc.)
-        self.game_screen.reset_game()
-        self.sm.current = "game"
+    # --- saving --------------------------------------------------------------
+
+    @property
+    def save_path(self):
+        return Path(self.user_data_dir) / SAVE_NAME
+
+    def save(self, state):
+        save.save(state, self.save_path)
+
+    def has_save(self):
+        return self.save_path.exists()
+
+    # --- flow ------------------------------------------------------------------
 
     def goto_menu(self):
+        self.menu.continue_btn.disabled = not self.has_save()
         self.sm.current = "menu"
 
-    def game_over(self, summary=None):
-        self.game_over_screen.over.set_summary(summary)
-        self.sm.current = "gameover"
+    def new_game(self):
+        self.state = game.new_game()
+        self.save(self.state)
+        self.show_game()
+
+    def continue_game(self):
+        try:
+            self.state = save.load(self.save_path)
+        except (OSError, ValueError, KeyError):
+            self.menu.continue_btn.disabled = True
+            return
+        if self.state.life_over:
+            self.life_ended(self.state)
+        else:
+            self.show_game()
+
+    def show_game(self):
+        self.game_view.set_state(self.state)
+        self.sm.current = "game"
+
+    def life_ended(self, state):
+        self.life.show_death(state)
+        self.sm.current = "life"
+
+    def next_life(self):
+        lines = game.begin_next_life(self.state)
+        self.save(self.state)
+        self.life.show_birth(lines)
 
 
 def main():

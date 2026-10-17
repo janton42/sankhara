@@ -5,11 +5,11 @@ from kivy.uix.popup import Popup
 from sankhara.ui.theme import ACCENT, MUTED, PANEL, TEXT, AccentButton, ThemedButton, WrapLabel
 
 ABOUT_TEXT = (
-    "Sankhara is a game of karma and rebirth. You are born into a family "
-    "somewhere in a generated world, and each day you choose how to spend your "
-    "24 hours.\n\n"
-    "Your choices shape your health and your karma. Sankhāra is the Pali word "
-    "for the mental formations that, in Buddhist thought, condition what comes next."
+    "Sankhara is the chronicle of a nation, lived one person at a time. Each year "
+    "you decide where your attention goes, and the realm, your family and the "
+    "people around you carry on with or without you.\n\n"
+    "Lives end. The nation does not. There is no winning, only how you spend "
+    "the years you are given."
 )
 
 
@@ -29,7 +29,7 @@ class MainMenuScreen(BoxLayout):
         )
         self.add_widget(self.title_label)
         self.subtitle_label = Label(
-            text="a game of karma and rebirth",
+            text="a chronicle of lives in one land",
             font_size=18,
             color=MUTED,
             size_hint_y=None,
@@ -42,7 +42,9 @@ class MainMenuScreen(BoxLayout):
             "size": (320, 56),
             "pos_hint": {"center_x": 0.5},
         }
-        self.new_game_btn = AccentButton(text="New Game", font_size=22, bold=True, **button_kwargs)
+        self.continue_btn = AccentButton(text="Continue", font_size=22, bold=True, **button_kwargs)
+        self.add_widget(self.continue_btn)
+        self.new_game_btn = ThemedButton(text="New Game", font_size=20, **button_kwargs)
         self.add_widget(self.new_game_btn)
         self.about_btn = ThemedButton(text="About", font_size=20, **button_kwargs)
         self.about_btn.bind(on_press=lambda *_: self.show_about())
