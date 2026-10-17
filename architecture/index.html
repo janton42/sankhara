@@ -383,10 +383,21 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#turn-loop" class="md-nav__link">
+  <a href="#hex-grid" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Turn loop
+        Hex grid
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#day-loop" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Day loop
       
     </span>
   </a>
@@ -477,10 +488,21 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#turn-loop" class="md-nav__link">
+  <a href="#hex-grid" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Turn loop
+        Hex grid
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#day-loop" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Day loop
       
     </span>
   </a>
@@ -530,15 +552,15 @@
 <tbody>
 <tr>
 <td><code>sankhara.constants</code></td>
-<td><code>config.py</code>: every tunable value — noise parameters, map size, biome thresholds and resource baselines, hex geometry, player actions, culture groups.</td>
+<td><code>config.py</code>: every tunable value — noise parameters, map size, biome thresholds and resource baselines, player actions, culture groups.</td>
 </tr>
 <tr>
 <td><code>sankhara.world</code></td>
-<td>Map generation (<code>map_gen.py</code>) and resource extraction/regeneration (<code>resources.py</code>).</td>
+<td>Map generation (<code>map_gen.py</code>), hex-grid math (<code>hexgrid.py</code>) and resource extraction/regeneration (<code>resources.py</code>).</td>
 </tr>
 <tr>
 <td><code>sankhara.core</code></td>
-<td><code>game_engine.generate_map()</code> builds the map; <code>turn_manager</code> applies end-of-turn resource regeneration and action effects.</td>
+<td><code>game_engine.generate_map(seed)</code> builds the map; <code>day_plan</code> enforces the 24-hour action budget; <code>turn_manager</code> applies end-of-day resource regeneration and action effects.</td>
 </tr>
 <tr>
 <td><code>sankhara.entities</code></td>
@@ -546,7 +568,7 @@
 </tr>
 <tr>
 <td><code>sankhara.ui</code></td>
-<td>Kivy widgets: the info/action panel (<code>ui_kivy.py</code>) and screens (menu, map view, game over).</td>
+<td>Kivy widgets: the info/action panel (<code>ui_kivy.py</code>), screens (menu, map view, game over), text formatters (<code>screens/info_panel.py</code>) and the palette, biome colours and styled widgets (<code>theme.py</code>).</td>
 </tr>
 <tr>
 <td><code>sankhara.app</code></td>
@@ -557,19 +579,34 @@
 <h2 id="world-generation">World generation<a class="headerlink" href="#world-generation" title="Permanent link">&para;</a></h2>
 <ol>
 <li>Perlin noise (<code>noise</code> library) produces elevation and moisture grids of
-   <code>MAP_WIDTH × MAP_HEIGHT</code>, normalised to <code>[0, 1]</code>.</li>
+   <code>MAP_WIDTH × MAP_HEIGHT</code>, normalised to <code>[0, 1]</code>. Each new game picks a
+   random seed (shown in the panel header); the same seed always gives the
+   same map. Noise is sampled at each hex's true position so features aren't
+   stretched by the offset layout.</li>
 <li>Each value is bucketed by <code>ELEVATION_THRESHOLDS</code> / <code>MOISTURE_THRESHOLDS</code>;
    the pair names the biome (e.g. <code>"Hill Forest"</code>).</li>
 <li>Resources are seeded from <code>BIOME_RESOURCE_BASELINES</code> with ±
    <code>RESOURCE_VARIATION_PERCENTAGE</code> random variation.</li>
 </ol>
-<p>The map is a list of columns of tile dicts with <code>id</code>, <code>q</code>, <code>r</code> (axial hex
-coordinates), <code>elevation</code>, <code>moisture</code>, <code>biome</code>, <code>abbr</code> and <code>resources</code>.</p>
-<h2 id="turn-loop">Turn loop<a class="headerlink" href="#turn-loop" title="Permanent link">&para;</a></h2>
-<p>At the end of a turn <code>process_player_actions()</code> adds each taken action's karma
-and health effects, applies skip penalties for skippable actions not taken, and
-clamps karma to <code>[-1, 1]</code> and health to <code>[0, 100]</code>. <code>regenerate_resources()</code>
-then regrows renewable resources toward their biome maximum.</p>
+<p>The map is a list of columns of tile dicts with <code>id</code>, <code>q</code> (column), <code>r</code> (row),
+<code>elevation</code>, <code>moisture</code>, <code>biome</code>, <code>abbr</code> and <code>resources</code>.</p>
+<h2 id="hex-grid">Hex grid<a class="headerlink" href="#hex-grid" title="Permanent link">&para;</a></h2>
+<p><code>world/hexgrid.py</code> is pure math for a pointy-top grid in "odd-r" offset
+coordinates (odd rows shifted half a hex right). <code>tile_center</code>,
+<code>pixel_to_tile</code> (exact, via cube rounding), <code>hex_corners</code> and <code>fit_size</code> are
+all the map view needs: it fits the map to its widget, draws row 0 at the top,
+and hit-tests clicks. Biome fill colours come from <code>theme.biome_color</code>, which
+derives hue from the moisture band and shading from the elevation band.</p>
+<h2 id="day-loop">Day loop<a class="headerlink" href="#day-loop" title="Permanent link">&para;</a></h2>
+<p>Each turn is a day. The player fills up to four action slots; <code>day_plan</code>
+only offers actions that fit in the hours left (24 per day) and respects
+non-repeatable actions. On <strong>End Day</strong>, <code>process_player_actions()</code> applies each
+taken action's karma and health effects (once per occurrence), applies skip
+penalties for skippable actions not taken, clamps karma to <code>[-1, 1]</code> and health
+to <code>[0, 100]</code>, and returns the effects, which the panel writes to its log.
+<code>regenerate_resources()</code> regrows renewable resources toward their biome
+maximum. When health reaches 0 the game-over screen shows a summary of the
+life.</p>
 <h2 id="stubs">Stubs<a class="headerlink" href="#stubs" title="Permanent link">&para;</a></h2>
 <p><code>core/karma.py</code>, <code>entities/npc.py</code>, <code>world/terrain.py</code> and <code>world/biomes.py</code>
 are empty placeholders for planned features.</p>
