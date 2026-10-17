@@ -7,33 +7,39 @@ exactly. Rules live in the sibling modules; this file only holds data.
 import random
 from dataclasses import asdict, dataclass, field, fields
 
-CATEGORIES = ("food", "goods", "coin")
+# What every budget starts with. Discoveries can add more (whatever the people come to
+# use for exchange), so budgets are open-ended.
+BASE_CATEGORIES = ("food", "hands", "regard")
 
 
 @dataclass
 class Budget:
-    """A pool of the coarse resource categories: the nation's treasury or a household's means."""
+    """A pool of coarse means: the people's common stores, or a family's."""
 
-    food: float = 0.0
-    goods: float = 0.0
-    coin: float = 0.0
+    amounts: dict[str, float] = field(default_factory=dict)
 
     def get(self, category):
-        return getattr(self, category)
+        return self.amounts.get(category, 0.0)
+
+    def set(self, category, value):
+        self.amounts[category] = value
 
     def can_afford(self, cost):
-        return all(self.get(c) >= amount for c, amount in cost.items())
+        return all(self.get(c) >= amount - 1e-9 for c, amount in cost.items())
 
     def add(self, amounts, scale=1.0):
         for c, amount in amounts.items():
-            setattr(self, c, getattr(self, c) + amount * scale)
+            self.amounts[c] = self.get(c) + amount * scale
 
     def spend(self, cost):
         self.add(cost, -1.0)
 
     def clamp_nonnegative(self):
-        for c in CATEGORIES:
-            setattr(self, c, max(0.0, getattr(self, c)))
+        for c in self.amounts:
+            self.amounts[c] = max(0.0, self.amounts[c])
+
+    def copy(self):
+        return Budget(dict(self.amounts))
 
 
 @dataclass
@@ -44,7 +50,7 @@ class Character:
     gender: str
     birth_year: int
     death_age: int  # hidden; the player never sees it
-    station: str
+    station: str  # their role among the people
     settlement_id: int
     health: float = 80.0
     alive: bool = True
@@ -54,14 +60,15 @@ class Character:
     father_id: int | None = None
     spouse_id: int | None = None
     children: list[int] = field(default_factory=list)
-    household: Budget = field(default_factory=Budget)
+    means: Budget = field(default_factory=Budget)
     tendencies: dict[str, float] = field(default_factory=dict)  # hidden
     karma: float = 0.0  # hidden; used for NPCs, the player's lives on the Soul
     affinity: dict[str, float] = field(default_factory=dict)  # other id (str) -> -1..1
     family_stability: float = 1.0  # multiplier on family misfortune
-    fortune: float = 1.0  # multiplier on household income
+    fortune: float = 1.0  # multiplier on what the family brings in
+    origin: str = ""  # the people they were born among, if not ours
     is_player: bool = False
-    is_advisor: bool = False
+    is_elder: bool = False
 
     def age(self, year):
         return year - self.birth_year
@@ -80,31 +87,70 @@ class Character:
 
 @dataclass
 class Settlement:
+    """A camp of the people (later perhaps a village or more)."""
+
     id: int
     name: str
     col: int
     row: int
     population: float
-    is_capital: bool = False
-    works: dict[str, int] = field(default_factory=dict)  # irrigation, granary, school, roads...
-    stability: float = 55.0
-    prosperity: float = 45.0
+    is_seat: bool = False  # where the leader lives
+    kind: str = "camp"
+    works: dict[str, int] = field(default_factory=dict)  # gathering place, store pits, fields...
+    cohesion: float = 55.0
+    plenty: float = 45.0
     food_balance: float = 0.0  # last year's surplus (+) or shortfall (-)
 
 
 @dataclass
 class Nation:
+    """The people as a whole."""
+
     name: str
     culture: str  # elevation band whose naming culture the people share
-    dynasty: str
-    treasury: Budget
-    territory: list[list[int]]  # [col, row] pairs
-    ruler_id: int | None = None
-    tax_rate: float = 0.15
-    stability: float = 55.0
-    prosperity: float = 45.0
-    learning: float = 5.0
-    arts: float = 5.0
+    stores: Budget  # what is held in common
+    territory: list[list[int]]  # [col, row] pairs: the land the people range over
+    leader_id: int | None = None
+    leading_family: str = ""
+    cohesion: float = 55.0
+    plenty: float = 45.0
+    lore: float = 15.0  # songs, stories and remembered skill
+    known: dict[str, str] = field(default_factory=dict)  # discovery id -> chosen form ("" if none)
+    insight: dict[str, float] = field(default_factory=dict)  # discovery id -> progress
+    succession: str = "respected"  # how a new leader is found
+    names: dict[str, str] = field(default_factory=dict)  # display names: categories, titles
+
+
+@dataclass
+class Neighbour:
+    """Another people on the map, simulated coarsely."""
+
+    id: int
+    name: str
+    culture: str
+    col: int
+    row: int
+    territory: list[list[int]]
+    population: float
+    temper: float  # 0 peaceable .. 1 quick to violence
+    relations: float = 0.0  # -1 hostile .. 1 close
+    met: bool = False
+    known: list[str] = field(default_factory=list)
+
+
+@dataclass
+class Project:
+    """Something that takes several years of someone's attention."""
+
+    id: int
+    kind: str
+    leader_id: int
+    years_needed: int
+    years_done: int = 0
+    target: str | None = None
+    slot: int = 0  # for the player: which attention slot it occupies
+    started: int = 0
+    stalled: bool = False
 
 
 @dataclass
@@ -136,10 +182,13 @@ class GameState:
     player_id: int
     characters: dict[str, Character] = field(default_factory=dict)  # id (str) -> Character
     settlements: dict[str, Settlement] = field(default_factory=dict)
+    neighbours: dict[str, Neighbour] = field(default_factory=dict)
+    projects: dict[str, Project] = field(default_factory=dict)
     events: list[EventInstance] = field(default_factory=list)  # this year's
-    plan: list[str | None] = field(default_factory=list)  # chosen action ids per slot
+    plan: list[str | None] = field(default_factory=list)  # chosen option keys per slot
     defaults: list[str] = field(default_factory=list)  # what habit suggested this year
     modifiers: dict[str, float] = field(default_factory=dict)  # this year's world effects
+    pending_choice: str | None = None  # a discovery whose form the player must choose
     log: list[str] = field(default_factory=list)
     next_id: int = 1
     rng_state: list | None = None
@@ -157,9 +206,16 @@ class GameState:
     def settlement(self, sid):
         return self.settlements.get(str(sid)) if sid is not None else None
 
+    def neighbour(self, nid):
+        return self.neighbours.get(str(nid)) if nid is not None else None
+
     @property
-    def ruler(self):
-        return self.character(self.nation.ruler_id)
+    def leader(self):
+        return self.character(self.nation.leader_id)
+
+    @property
+    def seat(self):
+        return next(s for s in self.settlements.values() if s.is_seat)
 
     def living(self):
         return [c for c in self.characters.values() if c.alive]
@@ -172,6 +228,9 @@ class GameState:
     def add_character(self, char):
         self.characters[str(char.id)] = char
         return char
+
+    def projects_of(self, cid):
+        return [p for p in self.projects.values() if p.leader_id == cid]
 
     def total_population(self):
         return sum(s.population for s in self.settlements.values())
@@ -199,17 +258,24 @@ class GameState:
     def from_dict(cls, data):
         data = dict(data)
         nation = dict(data["nation"])
-        nation["treasury"] = Budget(**nation["treasury"])
-        data["nation"] = Nation(**nation)
-        data["soul"] = Soul(**data["soul"])
+        nation["stores"] = Budget(**nation["stores"])
+        data["nation"] = _known(Nation, nation)
+        data["soul"] = _known(Soul, data["soul"])
         data["characters"] = {k: _character(v) for k, v in data["characters"].items()}
-        data["settlements"] = {k: Settlement(**v) for k, v in data["settlements"].items()}
-        data["events"] = [EventInstance(**e) for e in data["events"]]
-        known = {f.name for f in fields(cls)}
-        return cls(**{k: v for k, v in data.items() if k in known})
+        data["settlements"] = {k: _known(Settlement, v) for k, v in data["settlements"].items()}
+        data["neighbours"] = {k: _known(Neighbour, v) for k, v in data["neighbours"].items()}
+        data["projects"] = {k: _known(Project, v) for k, v in data["projects"].items()}
+        data["events"] = [_known(EventInstance, e) for e in data["events"]]
+        return _known(cls, data)
+
+
+def _known(cls, data):
+    """Build a dataclass, ignoring keys it doesn't (or no longer) have."""
+    names = {f.name for f in fields(cls)}
+    return cls(**{k: v for k, v in data.items() if k in names})
 
 
 def _character(data):
     data = dict(data)
-    data["household"] = Budget(**data["household"])
-    return Character(**data)
+    data["means"] = Budget(**data["means"])
+    return _known(Character, data)

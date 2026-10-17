@@ -1,55 +1,163 @@
 import json
 
-from sankhara.sim import game, save, tendencies
+from sankhara.sim import discoveries, game, save, tendencies
 from sankhara.sim.state import EventInstance, GameState
-from sankhara.sim.stations import ACTION_SLOTS, ADULT_AGE
+from sankhara.sim.stations import ACTION_SLOTS, ADULT_AGE, rebirth_weights, station_title
 
 
-def test_new_game_starts_as_young_ruler(state):
+def _quiet(state):
+    """No events and nothing planned, so a test controls the year."""
+    state.events = []
+    state.plan = [None] * ACTION_SLOTS
+    state.defaults = []
+
+
+def test_new_game_starts_as_a_young_leader_of_a_small_band(state):
     player = state.player
-    assert player.station == "ruler"
+    assert player.station == "leader"
     assert player.age(state.year) == 20
-    assert state.nation.ruler_id == player.id
-    assert state.nation.dynasty == player.family_name
-    assert len(state.nation.territory) == 19
-    assert 2 <= len(state.settlements) <= 5
-    assert sum(1 for s in state.settlements.values() if s.is_capital) == 1
-    assert sum(1 for c in state.living() if c.is_advisor) == 3
+    assert state.nation.leader_id == player.id
+    assert 100 < state.total_population() < 1500
+    assert len(state.settlements) == 3
+    assert all(s.kind == "camp" for s in state.settlements.values())
+    assert set(state.nation.known) == set(discoveries.START_KNOWN)
+    assert discoveries.stirring(state)
+    assert len(state.neighbours) == 3 and not any(n.met for n in state.neighbours.values())
+    assert sum(1 for c in state.living() if c.is_elder) == 4
     assert len(state.plan) == ACTION_SLOTS
 
 
+def test_there_is_no_money_or_trade_goods_at_the_start(state):
+    assert discoveries.categories(state.nation) == ["food", "hands", "regard"]
+    text = json.dumps(state.to_dict()).lower()
+    assert "coin" not in text and "goods" not in text
+
+
 def test_obligations_are_listed_first(state):
-    state.events = [EventInstance("stranger", "A stranger", obligation="shelter", penalty=0.05)]
+    state.events = [EventInstance("stranger", "A stranger", obligation="welcome_stranger")]
     opts = game.options(state)
-    assert opts[0].obligation and opts[0].key == "event:0"
-    assert all(not o.obligation for o in opts[1:])
+    assert opts[0].kind == "obligation" and opts[0].key == "event:0"
+    assert all(o.kind != "obligation" for o in opts[1:])
 
 
 def test_choose_rejects_duplicates_and_unaffordable(state):
-    state.plan = [None] * ACTION_SLOTS
-    assert game.choose(state, 0, "hold_court")
-    assert not game.choose(state, 1, "hold_court")
-    state.nation.treasury.coin = 0
-    assert not game.choose(state, 1, "school")
+    _quiet(state)
+    assert game.choose(state, 0, "call_together")
+    assert not game.choose(state, 1, "call_together")
+    state.player.means.set("regard", 0)
+    assert not game.choose(state, 0, "call_together")
     assert game.choose(state, 0, None)
     assert state.plan[0] is None
 
 
 def test_costs_are_cumulative_across_slots(state):
-    state.plan = [None] * ACTION_SLOTS
-    state.nation.treasury.coin = 30
+    _quiet(state)
     state.player.tendencies = {}
-    assert game.choose(state, 0, "hold_court")  # 20 coin
-    assert not game.choose(state, 1, "hold_court")
-    assert not game.choose(state, 1, "display")  # 50 coin, only 10 left
+    state.player.means.set("regard", 6)
+    assert game.choose(state, 0, "call_together")  # 4 regard
+    assert not game.choose(state, 1, "drive_out")  # 3 regard, only 2 left
+
+
+def test_a_project_holds_its_slot_until_finished(state):
+    _quiet(state)
+    state.player.tendencies = {}
+    assert game.choose(state, 1, "new:teach_young:")
+    game.end_year(state)
+    project = state.projects_of(state.player_id)[0]
+    assert state.plan[1] == f"p:{project.id}"
+    report = None
+    for _ in range(10):
+        state.events = []
+        state.player.means.set("hands", 10)
+        report = game.end_year(state)
+        if str(project.id) not in state.projects:
+            break
+    assert str(project.id) not in state.projects
+    assert any(i.startswith("Finished") for i in report.interrupts)
+
+
+def test_clearing_a_projects_slot_sets_it_aside(state):
+    _quiet(state)
+    game.choose(state, 0, "new:teach_young:")
+    game.end_year(state)
+    project = state.projects_of(state.player_id)[0]
+    state.events = []
+    state.plan = [None] * ACTION_SLOTS
+    game.end_year(state)
+    assert str(project.id) not in state.projects
+
+
+def test_a_project_stalls_without_means(state):
+    _quiet(state)
+    game.choose(state, 0, "new:teach_young:")
+    game.end_year(state)
+    state.events = []
+    state.player.means.set("hands", 0)
+    report = game.end_year(state)
+    assert any(i.startswith("Stalled") for i in report.interrupts)
+    assert state.projects_of(state.player_id)[0].stalled
+
+
+def test_an_idea_without_forms_is_simply_understood(state):
+    _quiet(state)
+    d = discoveries.DISCOVERIES["food_keeping"]
+    state.nation.insight[d.id] = d.cost
+    game.end_year(state)
+    assert "food_keeping" in state.nation.known
+
+
+def test_a_leader_chooses_the_shape_of_a_new_custom(state):
+    _quiet(state)
+    d = discoveries.DISCOVERIES["gifts"]
+    state.nation.insight[d.id] = d.cost
+    report = game.end_year(state)
+    assert state.pending_choice == "gifts"
+    assert any("choice" in i for i in report.interrupts)
+    game.choose_form(state, "feasts")
+    assert state.nation.known["gifts"] == "feasts"
+    assert state.pending_choice is None
+
+
+def test_working_at_an_idea_brings_it_closer(state):
+    _quiet(state)
+    target = next(d for d in discoveries.stirring(state))
+    before = state.nation.insight[target.id]
+    assert game.choose(state, 0, f"new:pursue:{target.id}")
+    game.end_year(state)
+    assert state.nation.insight.get(target.id, target.cost) > before
+
+
+def test_forms_of_exchange_bring_their_own_means(state):
+    discoveries.learn(state, "exchange", "tokens")
+    cats = discoveries.categories(state.nation)
+    assert "tokens" in cats
+    assert discoveries.category_name(state.nation, "tokens") in (
+        "shells",
+        "polished stones",
+        "beads",
+    )
+    assert "trader" in rebirth_weights(state.nation)
+
+
+def test_roles_appear_and_fade_with_new_ways(state):
+    assert "planter" not in rebirth_weights(state.nation)
+    gatherers = rebirth_weights(state.nation)["gatherer"]
+    discoveries.learn(state, "cultivation", "common_fields")
+    weights = rebirth_weights(state.nation)
+    assert "planter" in weights and weights["gatherer"] < gatherers
+
+
+def test_how_leaders_are_chosen_can_change(state):
+    discoveries.learn(state, "council", "lineage")
+    assert state.nation.succession == "lineage"
+    assert station_title(state.player, state.nation) == "Chief"
 
 
 def test_habit_prefills_slots(state):
     state.player.tendencies = {t: -0.5 for t in tendencies.TAGS}
     state.player.tendencies["generous"] = 1.0
     game.begin_year(state)
-    assert "lower_taxes" in state.defaults
-    assert state.plan[: len(state.defaults)] == state.defaults
+    assert "share_food" in state.defaults or "open_stores" in state.defaults
     state.player.tendencies = {t: 0.0 for t in tendencies.TAGS}
     game.begin_year(state)
     assert state.defaults == []
@@ -58,20 +166,20 @@ def test_habit_prefills_slots(state):
 def test_choosing_strengthens_and_overriding_habit_weakens(state):
     player = state.player
     player.tendencies = {t: 0.0 for t in tendencies.TAGS}
-    state.events = []
-    state.plan = ["hold_court", None, None]
-    state.defaults = ["lower_taxes"]
+    _quiet(state)
+    state.plan = ["call_together", None, None]
+    state.defaults = ["share_food"]
     game.end_year(state)
     assert player.tendencies["caring"] > 0
     assert player.tendencies["generous"] < 0
 
 
-def test_skipping_an_obligation_costs_karma(state):
+def test_skipping_an_obligation_costs_karma():
     def year(take):
         s = game.new_game(seed=99)
-        s.events = [EventInstance("stranger", "x", obligation="shelter", penalty=0.05)]
+        _quiet(s)
+        s.events = [EventInstance("stranger", "x", obligation="welcome_stranger", penalty=0.05)]
         s.plan = ["event:0" if take else None, None, None]
-        s.defaults = []
         before = s.soul.karma
         game.end_year(s)
         return s.soul.karma - before
@@ -79,37 +187,73 @@ def test_skipping_an_obligation_costs_karma(state):
     assert year(take=True) > 0 > year(take=False)
 
 
-def test_karma_is_never_shown_in_option_text(state):
+def test_an_alternative_answer_meets_the_obligation_with_its_own_weight(state):
+    n = next(iter(state.neighbours.values()))
+    n.met = True
+    _quiet(state)
+    state.events = [
+        EventInstance(
+            "raid",
+            "raid",
+            obligation="answer_raid",
+            penalty=0.06,
+            data={"neighbour": n.id, "also": ["avenge_raid"]},
+        )
+    ]
+    before = n.relations
+    state.plan = ["avenge_raid", None, None]
+    karma = state.soul.karma
+    game.end_year(state)
+    assert n.relations < before
+    assert state.soul.karma < karma
+
+
+def test_hidden_ideas_never_appear_in_option_text(state):
     for opt in game.options(state):
-        text = f"{opt.action.name} {opt.action.text} {opt.blurb}".lower()
+        text = f"{opt.name} {opt.text} {opt.blurb}".lower()
         assert "karma" not in text and "rebirth" not in text
 
 
-def test_life_ends_and_next_begins_in_same_nation(state):
-    nation_name = state.nation.name
+def test_obligations_stop_the_years_from_passing(state):
+    _quiet(state)
+    seen = False
+    for _ in range(40):
+        report = game.end_year(state)
+        if report.life_ended:
+            break
+        if any(e.obligation for e in state.events):
+            assert "Something is expected of you." in report.interrupts
+            seen = True
+            break
+        state.plan = [None] * ACTION_SLOTS
+    assert seen
+
+
+def test_life_ends_and_next_begins_among_the_same_people(state):
+    name = state.nation.name
     old = state.player
     old.death_age = old.age(state.year)
     report = game.end_year(state)
     assert report.life_ended and not old.alive
     assert state.soul.lives[-1]["name"] == old.full_name
-    assert state.nation.ruler_id != old.id  # someone succeeded
+    assert state.nation.leader_id != old.id  # someone else leads
     lines = game.begin_next_life(state)
     new = state.player
     assert new.id != old.id and new.alive and new.is_player and not old.is_player
     assert new.age(state.year) == ADULT_AGE
-    assert state.nation.name == nation_name
+    assert state.nation.name == name
     assert lines and "born" in lines[0]
 
 
-def test_rebirth_station_is_random():
-    stations = set()
+def test_rebirth_role_is_random():
+    roles = set()
     for seed in range(25):
         s = game.new_game(seed=seed)
         s.player.death_age = s.player.age(s.year)
         game.end_year(s)
         game.begin_next_life(s)
-        stations.add(s.player.station)
-    assert len(stations) >= 3
+        roles.add(s.player.station)
+    assert len(roles) >= 3
 
 
 def test_karma_shapes_conditions_of_next_life():
@@ -130,25 +274,8 @@ def test_karma_shapes_conditions_of_next_life():
     assert wholesome > unwholesome
 
 
-def test_heir_succeeds_dead_ruler(state):
-    player = state.player
-    player.death_age = player.age(state.year)
-    heir = None
-    # give the ruler a child so there is an heir
-    from sankhara.sim.people import create_character, create_spouse
-
-    spouse = create_spouse(state, player)
-    mother, father = (spouse, player) if player.gender == "male" else (player, spouse)
-    heir = create_character(
-        state, "noble", player.settlement_id, state.year - 1, mother=mother, father=father
-    )
-    game.end_year(state)
-    assert state.nation.ruler_id == heir.id
-    assert heir.station == "ruler"
-
-
 def test_save_and_load_round_trip(tmp_path, state, play):
-    play(state, 5)
+    play(state, 8)
     path = tmp_path / "save.json"
     save.save(state, path)
     loaded = save.load(path)
@@ -156,8 +283,8 @@ def test_save_and_load_round_trip(tmp_path, state, play):
         state.to_dict(), sort_keys=True
     )
     # the RNG is restored too, so both copies play on identically
-    play(state, 3, seed=5)
-    play(loaded, 3, seed=5)
+    play(state, 4, seed=5)
+    play(loaded, 4, seed=5)
     assert json.dumps(loaded.to_dict(), sort_keys=True) == json.dumps(
         state.to_dict(), sort_keys=True
     )
@@ -166,13 +293,16 @@ def test_save_and_load_round_trip(tmp_path, state, play):
 def test_from_dict_ignores_unknown_keys(state):
     data = state.to_dict()
     data["something_new"] = 1
+    data["nation"]["retired_field"] = 2
     assert GameState.from_dict(data).year == state.year
 
 
 def test_long_game_stays_sane(play):
     s = play(game.new_game(seed=3), 200, seed=3)
     assert len(s.soul.lives) >= 3
-    assert 500 < s.total_population() < 30000
-    assert 0 <= s.nation.stability <= 100 and 0 <= s.nation.learning <= 100
+    assert 150 < s.total_population() < 60000
+    assert 0 <= s.nation.cohesion <= 100 and 0 <= s.nation.lore <= 100
+    assert len(s.nation.known) > len(discoveries.START_KNOWN) + 5
+    assert any(n.met for n in s.neighbours.values())
     assert len(s.characters) < 600
     assert s.player.alive

@@ -1,193 +1,229 @@
-"""The nation's yearly economy: harvests, hunger and growth, taxes, upkeep, and the slow
-drift of stability, prosperity, learning and the arts. Settlements are simulated as
-population figures; households of tracked characters earn and spend separately."""
+"""The people's yearly round: food from the land, hunger and growth, what goes into the
+common stores, and the slow drift of cohesion, plenty and lore. Camps are simulated as
+population figures; the families of tracked characters keep their own means.
+"""
 
+import math
+
+from sankhara.sim import discoveries
 from sankhara.sim.stations import ADULT_AGE, STATIONS
-from sankhara.sim.world import settlement_fertility
+from sankhara.sim.world import camp_tiles, forage_value, is_watery, resource
 
 FOOD_NEED = 0.1  # food per person per year
-FOOD_YIELD = 0.105  # food per person per year at fertility 1.0
-TAX_FOOD_SHARE = 0.4  # share of the tax rate taken from the harvest
-COIN_PER_PERSON = 0.03
-GOODS_PER_PERSON = 0.012
-BASE_TAX = 0.15
-COURT_UPKEEP = {"coin": 15, "goods": 5}
-UPKEEP_PER_PERSON = {"coin": 0.012, "goods": 0.002}  # administration grows with the realm
-SPOILAGE = {"food": 0.1, "goods": 0.03, "coin": 0.03}  # stores rot, coffers leak
-WORK_CAPS = {"irrigation": 4, "granary": 3, "school": 2, "shrine": 2, "roads": 3}
-CAPACITY_PER_FERTILITY = 1500
-GRANARY_COVER = 0.06  # share of need a granary level covers in a bad year
+FOOD_YIELD = 0.1  # food per person per year when a camp is at half its capacity
+CAP_PER_TILE = 40  # people a tile can feed by foraging at forage value 1.0
+SHARE_OF_SURPLUS = 0.3  # how much of a good year's surplus goes to the common stores
+STORES_SPOILAGE = 0.35  # how much of the common stores rots each year, before food keeping
+MIN_SPOILAGE = 0.05
+HANDS_BASE = 25  # labour the people can spare in common each year, at 250 people
+WORK_CAPS = {"gathering": 1, "pits": 2, "fields": 3, "weir": 2, "herd": 3, "sacred": 1}
+GROWTH = 0.02
 
 
 def clamp(x, lo=0.0, hi=100.0):
     return max(lo, min(hi, x))
 
 
-def adjust_settlements(state, *, stability=0.0, prosperity=0.0, only=None):
-    """Nudge stability/prosperity across the realm (or one settlement)."""
+def adjust_settlements(state, *, cohesion=0.0, plenty=0.0, only=None):
+    """Nudge cohesion/plenty across the people (or one camp)."""
     targets = [state.settlement(only)] if only is not None else state.settlements.values()
     for s in targets:
-        s.stability = clamp(s.stability + stability)
-        s.prosperity = clamp(s.prosperity + prosperity)
-    refresh_nation_averages(state)
+        s.cohesion = clamp(s.cohesion + cohesion)
+        s.plenty = clamp(s.plenty + plenty)
+    refresh_averages(state)
 
 
 def advance(nation, field, amount):
-    """Raise learning or arts with diminishing returns as they approach 100."""
+    """Raise lore with diminishing returns as it approaches 100."""
     value = getattr(nation, field)
     setattr(nation, field, clamp(value + amount * (1 - value / 100)))
 
 
-def refresh_nation_averages(state):
+def refresh_averages(state):
     nation = state.nation
     total = state.total_population() or 1
-    nation.stability = sum(s.stability * s.population for s in state.settlements.values()) / total
-    nation.prosperity = sum(s.prosperity * s.population for s in state.settlements.values()) / total
+    nation.cohesion = sum(s.cohesion * s.population for s in state.settlements.values()) / total
+    nation.plenty = sum(s.plenty * s.population for s in state.settlements.values()) / total
+
+
+def people_scale(state):
+    """Common undertakings cost (and give) more as the people grow."""
+    return max(1.0, (state.total_population() / 250) ** 0.5)
+
+
+def capacity(state, settlement, fx=None):
+    """How many people a camp's land can feed in an ordinary year."""
+    fx = fx if fx is not None else discoveries.effects(state)
+    fishing = fx.get("fishing", False)
+    land = sum(forage_value(t, fishing) for t in camp_tiles(state, settlement))
+    works = settlement.works
+    bonus = 1 + 0.15 * works.get("fields", 0) + 0.1 * works.get("herd", 0)
+    bonus += 0.12 * works.get("weir", 0)
+    return max(30.0, CAP_PER_TILE * land * fx.get("capacity_mult", 1.0) * bonus)
+
+
+def hands_available(state):
+    """What the people can give to common work this year."""
+    nation = state.nation
+    return round(HANDS_BASE * people_scale(state) * (0.6 + 0.4 * nation.cohesion / 55))
 
 
 def economy_year(state):
-    """Run one year of the realm's economy. Returns log lines about notable outcomes."""
+    """Run one year of the people's life on the land. Returns lines about notable outcomes."""
     nation = state.nation
+    fx = discoveries.effects(state)
     mods = state.modifiers
     notes = []
-    learning_bonus = min(0.2, nation.learning / 500)
-    arts_bonus = min(10.0, nation.arts / 10)
     relief = mods.get("relief", 0.0)
     hungry = []
+    share = min(0.8, SHARE_OF_SURPLUS + fx.get("stores_share", 0))
+    # the more people, the harder it is to hold them together
+    size_strain = 6 * math.log2(max(1.0, state.total_population() / 300))
 
     for s in state.settlements.values():
-        fert = settlement_fertility(state, s)
-        harvest = mods.get("harvest", 1.0) * mods.get(f"harvest:{s.id}", 1.0)
-        irrigation = s.works.get("irrigation", 0)
-        capacity = CAPACITY_PER_FERTILITY * fert * (1 + 0.2 * irrigation)
-        # yields per person fall as the land fills up, so hunger limits growth
-        crowding = 1.25 - 0.5 * s.population / capacity
+        cap = capacity(state, s, fx)
+        ratio = s.population / cap
+        season = mods.get("harvest", 1.0) * mods.get(f"harvest:{s.id}", 1.0)
         production = (
-            s.population
-            * FOOD_YIELD
-            * (0.6 + 0.6 * fert)
-            * crowding
-            * (1 + 0.15 * irrigation)
-            * harvest
-            * (1 + learning_bonus)
+            s.population * FOOD_YIELD * (1.3 - 0.6 * ratio) * fx.get("food_mult", 1.0) * season
         )
         need = s.population * FOOD_NEED
-        taken = production * nation.tax_rate * TAX_FOOD_SHARE
-        balance = production - taken - need
+        surplus = production - need
+        given = max(0.0, surplus) * share
+        balance = surplus - given
         if balance < 0:
-            covered = min(-balance, need * GRANARY_COVER * s.works.get("granary", 0))
-            balance += covered
+            # store pits soften a lean year
+            balance += min(-balance, need * 0.05 * s.works.get("pits", 0))
         if balance < 0 and relief > 0:
             used = min(relief, -balance)
             relief -= used
             balance += used
         s.food_balance = balance
-
-        tax_scale = nation.tax_rate / BASE_TAX
-        nation.treasury.food += taken
-        nation.treasury.coin += (
-            s.population * COIN_PER_PERSON * tax_scale * (0.5 + s.prosperity / 100)
-        )
-        nation.treasury.goods += s.population * GOODS_PER_PERSON * tax_scale
+        nation.stores.add({"food": given})
 
         if balance < 0:
             hunger = min(1.0, -balance / need)
             s.population *= 1 - 0.3 * hunger
-            s.stability = clamp(s.stability - 20 * hunger)
-            s.prosperity = clamp(s.prosperity - 8 * hunger)
+            s.cohesion = clamp(s.cohesion - 15 * hunger)
+            s.plenty = clamp(s.plenty - 8 * hunger)
             hungry.append(s.name)
         else:
-            rate = 0.012 + 0.008 * (s.prosperity - 50) / 50
-            s.population += s.population * rate * (1 - s.population / capacity)
+            rate = GROWTH * (1 + 0.5 * (s.plenty - 50) / 50) * (1.15 if fx.get("settled") else 1)
+            s.population += s.population * rate * (1 - ratio)
 
-        plague = mods.get("plague", 0.0)
+        plague = mods.get("plague", 0.0) * fx.get("plague_mult", 1.0)
         if plague:
             s.population *= 1 - plague
-        s.population = max(20.0, s.population)
+        s.population = max(12.0, s.population)
 
         surplus_ratio = max(-0.5, min(0.5, balance / need))
-        target_stab = (
-            55 - (nation.tax_rate - BASE_TAX) * 150 + (s.prosperity - 45) * 0.2 + arts_bonus
+        crowding = max(0.0, ratio - 0.9) * 40
+        target_cohesion = (
+            52
+            + fx.get("cohesion", 0)
+            + 6 * s.works.get("gathering", 0)
+            + 4 * s.works.get("sacred", 0)
+            + (s.plenty - 45) * 0.15
+            + nation.lore / 20
+            - crowding
+            - size_strain
         )
-        s.stability = clamp(s.stability + 0.15 * (target_stab - s.stability))
-        target_pros = 45 + 8 * s.works.get("roads", 0) + 20 * surplus_ratio + 50 * learning_bonus
-        s.prosperity = clamp(s.prosperity + 0.1 * (target_pros - s.prosperity))
+        s.cohesion = clamp(s.cohesion + 0.15 * (target_cohesion - s.cohesion))
+        target_plenty = 45 + 25 * surplus_ratio + fx.get("plenty", 0)
+        s.plenty = clamp(s.plenty + 0.15 * (target_plenty - s.plenty))
+        if fx.get("settled") and s.kind == "camp":
+            s.kind = "village"
 
     if hungry:
         notes.append(f"Hunger in {', '.join(hungry)}.")
 
-    # the court's upkeep
-    nation.treasury.spend(COURT_UPKEEP)
-    nation.treasury.add(UPKEEP_PER_PERSON, -state.total_population())
-    for category, share in SPOILAGE.items():
-        setattr(nation.treasury, category, nation.treasury.get(category) * (1 - share))
-    if nation.treasury.coin < 0:
-        adjust_settlements(state, stability=-3)
-        notes.append("The treasury could not pay its way; officials went unpaid.")
-    nation.treasury.clamp_nonnegative()
+    spoilage = max(MIN_SPOILAGE, STORES_SPOILAGE + fx.get("spoilage", 0))
+    nation.stores.set("food", nation.stores.get("food") * (1 - spoilage))
+    for category in ("wares", "tokens", "favours"):
+        if category in nation.stores.amounts:
+            nation.stores.set(category, nation.stores.get(category) * 0.97)
+    nation.stores.set("hands", hands_available(state))
+    nation.stores.clamp_nonnegative()
 
-    # learning and the arts grow with schools and shrines, and fade without care
-    schools = sum(s.works.get("school", 0) for s in state.settlements.values())
-    shrines = sum(s.works.get("shrine", 0) for s in state.settlements.values())
-    nation.learning *= 0.96
-    nation.arts *= 0.96
-    advance(nation, "learning", 0.6 * schools)
-    advance(nation, "arts", 0.5 * shrines)
+    # what the people remember fades unless it is sung
+    nation.lore *= 0.98
+    advance(nation, "lore", 0.4 + fx.get("lore", 0))
 
-    refresh_nation_averages(state)
+    refresh_averages(state)
     return notes
 
 
-HOUSEHOLD_SPOILAGE = {"food": 0.15, "goods": 0.05}
-DEPENDANT_UPKEEP = {"food": 2.5, "coin": 0.5}  # per child or non-earning spouse
-FOOD_PRICE = 1.5  # coin per food when a household has to buy
+# --- families ---------------------------------------------------------------
+
+FAMILY_SPOILAGE = 0.3
+DEPENDANT_FOOD = 1.5  # per young child
+ADULT_FOOD = 3.0
+REGARD_FADE = 0.06
 
 
 def dependants(state, char):
-    """Young children (and, for the household head, a spouse) eat from this household."""
-    count = sum(
+    """Young children eat from their father's family (or their mother's, if he is gone)."""
+    if char.gender == "female" and state.character(char.spouse_id):
+        return 0
+    return sum(
         1
         for cid in char.children
-        if state.character(cid)
-        and state.character(cid).alive
-        and state.character(cid).age(state.year) < ADULT_AGE
+        if (c := state.character(cid)) and c.alive and c.age(state.year) < ADULT_AGE
     )
-    # count children once per couple: the father's household feeds them
-    mother_of_shared = char.gender == "female" and state.character(char.spouse_id) is not None
-    return 0 if mother_of_shared else count
+
+
+def land_richness(state, settlement, land):
+    tiles = camp_tiles(state, settlement)
+    if not tiles:
+        return 1.0
+    fish = discoveries.fx(state, "fishing")
+    if land == "plant":
+        value = sum(resource(t, "plant_food") for t in tiles)
+    elif land == "animal":
+        value = sum(resource(t, "animal_food") for t in tiles)
+    elif land == "water":
+        value = sum(1.0 if is_watery(t) else 0.3 for t in tiles) if fish else 0.3 * len(tiles)
+    else:
+        value = sum(forage_value(t) for t in tiles)
+    return 0.6 + 0.6 * value / len(tiles)
 
 
 def households_year(state):
-    """Income and upkeep for every tracked adult's household. Returns notes for the player."""
+    """What each tracked adult's family brings in and uses up. Returns notes for the player."""
     notes = []
+    nation = state.nation
+    fx = discoveries.effects(state)
+    in_use = set(discoveries.categories(nation))
     for char in state.living():
         if char.age(state.year) < ADULT_AGE:
             continue
         station = STATIONS[char.station]
-        settlement = state.settlement(char.settlement_id)
-        fert = settlement_fertility(state, settlement) if settlement else 1.0
-        harvest = state.modifiers.get("harvest", 1.0)
-        prosperity = (settlement.prosperity if settlement else 45) / 45
-        income = {
-            "food": station.income.get("food", 0) * fert * harvest,
-            "coin": station.income.get("coin", 0) * prosperity,
-            "goods": station.income.get("goods", 0),
-        }
-        char.household.add(income, char.fortune)
-        char.household.spend(station.upkeep)
-        char.household.add(DEPENDANT_UPKEEP, -dependants(state, char))
-        for category, share in HOUSEHOLD_SPOILAGE.items():
-            setattr(char.household, category, char.household.get(category) * (1 - share))
-        if char.household.food < 0 and char.household.coin > 0:
-            # buy what food the purse allows
-            bought = min(-char.household.food, char.household.coin / FOOD_PRICE)
-            char.household.food += bought
-            char.household.coin -= bought * FOOD_PRICE
-        if char.household.food < 0:
+        settlement = state.settlement(char.settlement_id) or state.seat
+        season = state.modifiers.get("harvest", 1.0)
+        income = {c: v for c, v in station.income.items() if c in in_use}
+        income["food"] = (
+            income.get("food", 0)
+            * land_richness(state, settlement, station.land)
+            * season
+            * fx.get("food_mult", 1.0)
+        )
+        if station.leads:
+            income["regard"] = income.get("regard", 0) + fx.get("leader_regard", 0)
+        char.means.add(income, char.fortune)
+        char.means.add({"food": ADULT_FOOD + DEPENDANT_FOOD * dependants(state, char)}, -1)
+        spoil = max(MIN_SPOILAGE, FAMILY_SPOILAGE + fx.get("spoilage", 0))
+        char.means.set("food", char.means.get("food") * (1 - spoil))
+        char.means.set("regard", char.means.get("regard") * (1 - REGARD_FADE))
+        char.means.set("hands", station.hands * (0.5 + char.health / 200))
+        if char.means.get("food") < 0:
+            # a band shares: a hungry family is fed from the common stores if it can be
+            short = -char.means.get("food")
+            taken = min(short, nation.stores.get("food"))
+            nation.stores.add({"food": -taken})
+            char.means.add({"food": taken})
+        if char.means.get("food") < 0:
             char.health -= 8
             if char.is_player:
-                notes.append("Your household went hungry.")
-        if char.household.coin < 0:
-            char.health -= 2
-        char.household.clamp_nonnegative()
+                notes.append("Your family went hungry.")
+        char.means.clamp_nonnegative()
     return notes

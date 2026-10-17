@@ -1,21 +1,21 @@
-"""What a character can do with a year's attention.
+"""One-year deeds: what a character can do with a slot of attention this year.
 
-Every station has its own set of actions with a different reach: a ruler's are
-broad and slow and draw on the treasury, a farmer's are local and immediate and
-draw on the household. Each action carries tendency tags and a hidden karma
-value reflecting the intention behind it, never its outcome.
+Every role has its own deeds with a different reach: the leader's draw on the
+people's common stores and touch everyone; the others draw on their own family's
+means and touch those nearby. Each deed carries inclination tags and a hidden
+karma value reflecting the intention behind it, never its outcome.
 
-Effects receive a Ctx and return a short sentence for the log.
+Longer undertakings are projects (`projects.py`). Effects receive a Ctx and return
+a short sentence for the chronicle.
 """
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-from sankhara.sim import tendencies
-from sankhara.sim.nation import WORK_CAPS, adjust_settlements, advance, clamp
-from sankhara.sim.people import create_spouse, family_of, heir_of
+from sankhara.sim import discoveries, tendencies
+from sankhara.sim.nation import adjust_settlements, advance, clamp, land_richness, people_scale
+from sankhara.sim.people import family_of
 from sankhara.sim.stations import ADULT_AGE
-from sankhara.sim.world import settlement_fertility
 
 
 @dataclass
@@ -31,7 +31,7 @@ class Ctx:
 
     @property
     def settlement(self):
-        return self.state.settlement(self.char.settlement_id)
+        return self.state.settlement(self.char.settlement_id) or self.state.seat
 
 
 @dataclass(frozen=True)
@@ -39,25 +39,29 @@ class Action:
     id: str
     name: str
     text: str
-    stations: tuple  # empty = open to every station
+    stations: tuple  # empty = open to every role
     tags: tuple
     karma: float  # hidden: the intention, not the outcome
     effect: Callable = field(repr=False)
     cost: dict = field(default_factory=dict)
-    scope: str = "station"  # "station" spends the treasury for rulers; "own" always the household
+    scope: str = "own"  # "people" spends the common stores when the leader acts
     requires: Callable | None = field(default=None, repr=False)
     obligation_only: bool = False
 
 
 def budget_for(state, char, action):
-    if action.scope == "station" and char.station == "ruler":
-        return state.nation.treasury
-    return char.household
+    if action.scope == "people" and char.station == "leader":
+        return state.nation.stores
+    return char.means
 
 
-def effective_cost(char, action):
-    mult = tendencies.cost_multiplier(char.tendencies, action.tags)
-    return {k: max(1, round(v * mult)) for k, v in action.cost.items()}
+def effective_cost(state, char, item):
+    """What an action or project costs this character, after inclination (and, when it
+    draws on the common stores, the size of the people)."""
+    mult = tendencies.cost_multiplier(char.tendencies, item.tags)
+    if budget_for(state, char, item) is state.nation.stores:
+        mult *= people_scale(state)
+    return {k: max(1, round(v * mult)) for k, v in item.cost.items()}
 
 
 # --- helpers ---------------------------------------------------------------
@@ -67,1136 +71,808 @@ def _family(ctx):
     return [c for _, c in family_of(ctx.state, ctx.char)]
 
 
-def _neediest(ctx, work):
-    sites = _open_sites(ctx.state, work)
-    return min(sites, key=lambda s: s.food_balance / max(1, s.population))
+def _local(ctx, cohesion=0.0, plenty=0.0):
+    adjust_settlements(ctx.state, cohesion=cohesion, plenty=plenty, only=ctx.settlement.id)
 
 
-def _build(ctx, settlement, work):
-    settlement.works[work] = min(WORK_CAPS[work], settlement.works.get(work, 0) + 1)
-    return settlement.works[work]
+def _people(ctx, cohesion=0.0, plenty=0.0):
+    adjust_settlements(ctx.state, cohesion=cohesion, plenty=plenty)
 
 
-def _open_sites(state, work):
-    return [s for s in state.settlements.values() if s.works.get(work, 0) < WORK_CAPS[work]]
-
-
-def _can_build(work):
-    return lambda state, char: bool(_open_sites(state, work))
-
-
-def _local(ctx, stability=0.0, prosperity=0.0):
-    adjust_settlements(
-        ctx.state, stability=stability, prosperity=prosperity, only=ctx.char.settlement_id
-    )
-
-
-def _realm(ctx, stability=0.0, prosperity=0.0):
-    adjust_settlements(ctx.state, stability=stability, prosperity=prosperity)
-
-
-def _heal(char, amount):
+def heal(char, amount):
     char.health = clamp(char.health + amount)
 
 
-def _neighbour(ctx):
-    s_id = ctx.char.settlement_id
+def neighbour(ctx):
     family = {c.id for c in _family(ctx)}
     near = [
         c
         for c in ctx.state.living()
-        if c.settlement_id == s_id and not c.is_player and c.id not in family
+        if c.settlement_id == ctx.char.settlement_id
+        and not c.is_player
+        and c.id != ctx.char.id
+        and c.id not in family
+        and c.age(ctx.state.year) >= ADULT_AGE
     ]
     return ctx.rng.choice(near) if near else None
 
 
-# --- generic actions ---------------------------------------------------------
+def _richness(ctx, land):
+    return land_richness(ctx.state, ctx.settlement, land) * ctx.state.modifiers.get("harvest", 1.0)
+
+
+def _gain(ctx, category, amount):
+    ctx.char.means.add({category: amount})
+
+
+def _young_children(state, char):
+    return [
+        c
+        for cid in char.children
+        if (c := state.character(cid)) and c.alive and c.age(state.year) < ADULT_AGE
+    ]
+
+
+def _nudge_insight(ctx, domain, amount):
+    options = [d for d in discoveries.available(ctx.state) if d.domain == domain]
+    if options:
+        discoveries.add_insight(ctx.state, ctx.rng.choice(options).id, amount)
+
+
+# --- for anyone --------------------------------------------------------------
 
 
 def _care_family(ctx):
-    fam = _family(ctx)
-    for c in fam:
-        _heal(c, 5)
+    for c in _family(ctx):
+        heal(c, 5)
         c.adjust_affinity(ctx.char.id, 0.1)
         ctx.char.adjust_affinity(c.id, 0.05)
-    return "Your family was looked after." if fam else "There was little family to tend."
+    return "Your family was looked after."
 
 
 def _rest(ctx):
-    _heal(ctx.char, 10)
+    heal(ctx.char, 10)
     return "You rested and recovered some strength."
 
 
-def _reflect(ctx):
-    _heal(ctx.char, 4)
-    return "The year passed quietly."
+def _share_food(ctx):
+    _local(ctx, cohesion=1.5)
+    _gain(ctx, "regard", 1)
+    who = neighbour(ctx)
+    if who:
+        who.adjust_affinity(ctx.char.id, 0.15)
+        heal(who, 5)
+    return "Those with little ate a little better."
 
 
-def _revel(ctx):
-    _heal(ctx.char, 2)
-    friend = _neighbour(ctx)
-    if friend:
-        friend.adjust_affinity(ctx.char.id, 0.1)
-    return "There was feasting and good company."
+def _feast(ctx):
+    heal(ctx.char, 3)
+    _gain(ctx, "regard", 0.5)
+    return "You ate well and laughed late into the night."
 
 
-def _seek_match(ctx):
-    if ctx.rng.random() < 0.6:
-        spouse = create_spouse(ctx.state, ctx.char)
-        return f"You married {spouse.full_name}."
-    return "No match came of it this year."
+def _take_more(ctx):
+    taken = min(10.0, ctx.nation.stores.get("food"))
+    ctx.nation.stores.add({"food": -taken})
+    _gain(ctx, "food", taken)
+    _local(ctx, cohesion=-1)
+    return "Your family ate better than most." if taken else "There was nothing spare to take."
 
 
-def _raise_children(ctx):
-    kids = [
-        ctx.state.character(c)
-        for c in ctx.char.children
-        if ctx.state.character(c) and ctx.state.character(c).alive
-    ]
+def _boast(ctx):
+    _gain(ctx, "regard", 3)
+    who = neighbour(ctx)
+    if who:
+        who.adjust_affinity(ctx.char.id, -0.1)
+    return "People heard a great deal about you this year."
+
+
+def _sit_alone(ctx):
+    heal(ctx.char, 4)
+    _nudge_insight(ctx, "lore", 2)
+    return "You spent long evenings alone at the edge of the camp, listening."
+
+
+def _shame_idler(ctx):
+    who = neighbour(ctx)
+    _gain(ctx, "regard", 2)
+    if who:
+        who.adjust_affinity(ctx.char.id, -0.3)
+        heal(who, -3)
+        return f"{who.name} was shamed before everyone. Some laughed."
+    return "There was no one to make an example of."
+
+
+def _teach_child(ctx):
+    kids = _young_children(ctx.state, ctx.char)
     for kid in kids:
         tendencies.pull_toward(kid.tendencies, ctx.char.tendencies, 0.15)
         kid.adjust_affinity(ctx.char.id, 0.1)
-    return "Your children grew under your eye."
+    return "Your children followed you everywhere, watching how you did things."
 
 
-def _has_young_children(state, char):
-    return any(
-        state.character(c) and state.character(c).alive and state.character(c).age(state.year) < 20
-        for c in char.children
-    )
+# --- the leader --------------------------------------------------------------
+
+
+def _call_together(ctx):
+    _people(ctx, cohesion=3)
+    return "The camps came together; old grudges were aired and some were settled."
+
+
+def _open_stores(ctx):
+    relief = 20 * people_scale(ctx.state)
+    ctx.state.modifiers["relief"] = ctx.state.modifiers.get("relief", 0.0) + relief
+    _people(ctx, cohesion=1.5)
+    return "The common stores were opened to whoever needed them."
+
+
+def _great_hunt(ctx):
+    food = 15 * _richness(ctx, "animal") * people_scale(ctx.state)
+    ctx.nation.stores.add({"food": food})
+    _gain(ctx, "regard", 2)
+    if ctx.rng.random() < 0.08:
+        heal(ctx.char, -15)
+        return "The great hunt brought meat for all, but you were gored."
+    return "The great hunt brought meat for all."
+
+
+def _larger_share(ctx):
+    taken = min(14.0, ctx.nation.stores.get("food"))
+    ctx.nation.stores.add({"food": -taken})
+    _gain(ctx, "food", taken)
+    _people(ctx, cohesion=-2)
+    return "Your family's share grew. People noticed."
+
+
+def _drive_out(ctx):
+    if ctx.rng.random() < 0.6:
+        _people(ctx, cohesion=2)
+        return "A troublemaker was driven from the camp. It was quieter afterwards."
+    _people(ctx, cohesion=-2)
+    return "A troublemaker was driven out. His kin have not forgiven it."
+
+
+def _settle_quarrels(ctx):
+    _people(ctx, cohesion=4)
+    _gain(ctx, "regard", 1)
+    return "You heard out every side, and most went away content."
+
+
+# --- keepers -----------------------------------------------------------------
+
+
+def _sing_songs(ctx):
+    advance(ctx.nation, "lore", 2.5)
+    return "The old songs were sung through the long nights, and the young learned them."
+
+
+def _tend_sick(ctx):
+    near = [c for c in ctx.state.living() if c.settlement_id == ctx.char.settlement_id]
+    for c in near:
+        heal(c, 4)
+    _local(ctx, cohesion=1)
+    ctx.state.modifiers["plague"] = ctx.state.modifiers.get("plague", 0) * 0.8
+    return "You went from shelter to shelter with your herbs and your songs."
+
+
+def _read_omens(ctx):
+    _gain(ctx, "regard", 2)
+    if ctx.rng.random() < 0.6:
+        _people(ctx, cohesion=1.5)
+        return "The signs were good, and the people were glad to hear it."
+    _people(ctx, cohesion=-1.5)
+    return "The signs were dark. The people grew uneasy."
+
+
+def _hold_secrets(ctx):
+    _gain(ctx, "regard", 3)
+    ctx.nation.lore = max(0.0, ctx.nation.lore - 1)
+    return "Some songs, you decided, were not for everyone."
+
+
+# --- hunters, gatherers, makers and the rest --------------------------------
+
+
+def _hunt(ctx):
+    _gain(ctx, "food", 8 * _richness(ctx, "animal"))
+    if ctx.rng.random() < 0.05:
+        heal(ctx.char, -12)
+        return "You hunted well, but came back torn by a beast."
+    return "You hunted and brought meat home."
+
+
+def _share_kill(ctx):
+    ctx.nation.stores.add({"food": 8 * _richness(ctx, "animal")})
+    _gain(ctx, "regard", 2)
+    return "You brought your kill back for the whole camp."
+
+
+def _best_cut(ctx):
+    _gain(ctx, "food", 12 * _richness(ctx, "animal"))
+    _local(ctx, cohesion=-0.5)
+    return "You kept the best of every kill for your own fire."
+
+
+def _forage(ctx):
+    _gain(ctx, "food", 8 * _richness(ctx, "plant"))
+    return "You knew where to look, and came home laden."
+
+
+def _show_plants(ctx):
+    _nudge_insight(ctx, "land", 4)
+    advance(ctx.nation, "lore", 0.5)
+    return "The children learned which plants feed and which kill."
+
+
+def _make_tools(ctx):
+    _gain(ctx, "regard", 3)
+    _local(ctx, plenty=1.5)
+    return "Your blades and scrapers went to whoever needed them."
+
+
+def _fine_work(ctx):
+    _gain(ctx, "regard", 1)
+    heal(ctx.char, 2)
+    return "You made something fine, and kept it."
+
+
+def _fish(ctx):
+    _gain(ctx, "food", 9 * _richness(ctx, "water"))
+    return "The water was generous."
+
+
+def _tend_fields(ctx):
+    _gain(ctx, "food", 11 * _richness(ctx, "plant"))
+    return "You worked your ground from planting to harvest."
+
+
+def _help_neighbours(ctx):
+    who = neighbour(ctx)
+    _local(ctx, cohesion=1.5)
+    if who:
+        who.adjust_affinity(ctx.char.id, 0.2)
+        who.means.add({"food": 6})
+        return f"You helped {who.name} bring in a harvest."
+    return "You helped wherever hands were short."
+
+
+def _tend_herd(ctx):
+    _gain(ctx, "food", 9 * _richness(ctx, "animal"))
+    return "Your beasts grew fat."
+
+
+def _trade(ctx):
+    _gain(ctx, "food", 10)
+    _gain(ctx, "regard", 1)
+    return "You carried things from those who had them to those who wanted them."
+
+
+def _hard_bargain(ctx):
+    for category in ("tokens", "wares"):
+        if category in ctx.nation.names:
+            _gain(ctx, category, 5)
+    who = neighbour(ctx)
+    if who:
+        who.adjust_affinity(ctx.char.id, -0.15)
+    return "You came out of every trade the better."
+
+
+# --- answering what's expected -------------------------------------------------
+
+
+def _tend_relative(ctx):
+    target = ctx.state.character(ctx.event.target_id) if ctx.event else None
+    if target:
+        heal(target, 25)
+        target.adjust_affinity(ctx.char.id, 0.25)
+        return f"You stayed by {target.name}'s side."
+    return "You did what you could."
+
+
+def _welcome_stranger(ctx):
+    if ctx.rng.random() < 0.35:
+        _nudge_insight(ctx, ctx.rng.choice(["land", "craft", "lore"]), 15)
+        return "The stranger stayed through the cold and showed you things you'd never seen."
+    return "The stranger warmed themselves at your fire and went on their way."
+
+
+def _sit_with_dying(ctx):
+    _gain(ctx, "regard", 1)
+    target = ctx.state.character(ctx.event.target_id) if ctx.event else None
+    return f"You sat with {target.name} to the end." if target else "You kept the vigil."
+
+
+def _search(ctx):
+    return "You searched the hills from first light."
+
+
+def _judge_feud(ctx):
+    _gain(ctx, "regard", 1)
+    return "You heard both families out."
+
+
+def _make_peace(ctx):
+    return "You went between the two families, carrying words."
+
+
+def _answer_raid(ctx):
+    return "You sent word to the raiders that this could not go on."
+
+
+def _avenge_raid(ctx):
+    n = ctx.state.neighbour(ctx.event.data.get("neighbour")) if ctx.event else None
+    if n is None:
+        n = next((x for x in ctx.state.neighbours.values() if x.met), None)
+    harm = discoveries.fx(ctx.state, "raid_mult")
+    _gain(ctx, "regard", 3)
+    if n is None:
+        return "There was no one left to punish."
+    n.relations = max(-1.0, n.relations - 0.35)
+    n.population *= 1 - 0.04 * harm
+    if ctx.rng.random() < 0.3:
+        ctx.state.seat.population *= 0.98
+        return f"Our people fell on the {n.name} by night. Not all of ours came back."
+    return f"Our people fell on the {n.name} by night and took back more than was stolen."
+
+
+def _hunt_beast(ctx):
+    return "You went out after the beast."
 
 
 def _has_family(state, char):
     return bool(family_of(state, char))
 
 
-def _unmarried(state, char):
-    return char.spouse_id is None and char.age(state.year) <= 45
-
-
-# --- ruler -------------------------------------------------------------------
-
-
-def _hold_court(ctx):
-    _realm(ctx, stability=4)
-    return "Petitions were heard; people felt listened to."
-
-
-def _raise_taxes(ctx):
-    ctx.nation.tax_rate = min(0.4, round(ctx.nation.tax_rate + 0.03, 2))
-    _realm(ctx, stability=-4)
-    return f"Taxes rose to {ctx.nation.tax_rate:.0%}."
-
-
-def _lower_taxes(ctx):
-    ctx.nation.tax_rate = max(0.05, round(ctx.nation.tax_rate - 0.03, 2))
-    _realm(ctx, stability=3, prosperity=2)
-    return f"Taxes fell to {ctx.nation.tax_rate:.0%}."
-
-
-def _irrigation(ctx):
-    s = _neediest(ctx, "irrigation")
-    level = _build(ctx, s, "irrigation")
-    return f"Channels were dug at {s.name} (irrigation {level})."
-
-
-def _granary(ctx):
-    s = _neediest(ctx, "granary")
-    level = _build(ctx, s, "granary")
-    return f"Granaries were raised at {s.name} (granary {level})."
-
-
-def _school(ctx):
-    s = max(
-        ctx.state.settlements.values(), key=lambda s: s.population - 400 * s.works.get("school", 0)
-    )
-    _build(ctx, s, "school")
-    advance(ctx.nation, "learning", 3)
-    return f"A school was endowed at {s.name}."
-
-
-def _shrine(ctx):
-    s = max(
-        ctx.state.settlements.values(), key=lambda s: s.population - 400 * s.works.get("shrine", 0)
-    )
-    _build(ctx, s, "shrine")
-    advance(ctx.nation, "arts", 3)
-    _local(ctx, stability=1)
-    return f"A shrine was raised at {s.name}."
-
-
-def _roads(ctx):
-    s = min(_open_sites(ctx.state, "roads"), key=lambda s: s.works.get("roads", 0))
-    _build(ctx, s, "roads")
-    return f"Roads were laid to {s.name}."
-
-
-def _display(ctx):
-    _realm(ctx, stability=5)
-    advance(ctx.nation, "arts", 1)
-    return "The capital was dazzled; for a while, people talked of little else."
-
-
-def _relieve(ctx):
-    ctx.state.modifiers["relief"] = ctx.state.modifiers.get("relief", 0.0) + 60
-    _realm(ctx, stability=2)
-    return "The royal stores were opened to the hungry."
-
-
-def _tutor_heir(ctx):
-    heir = heir_of(ctx.state)
-    if not heir or heir.is_player:
-        return "There was no heir to teach."
-    tendencies.pull_toward(heir.tendencies, ctx.char.tendencies, 0.15)
-    heir.adjust_affinity(ctx.char.id, 0.1)
-    return f"You spent the year shaping {heir.name}."
-
-
-def _has_heir(state, char):
-    heir = heir_of(state)
-    return heir is not None and not heir.is_player and heir.age(state.year) < 30
-
-
-def _seize(ctx):
-    nobles = [c for c in ctx.state.living() if c.station == "noble" and not c.is_player]
-    if not nobles:
-        return "There was no estate worth taking."
-    victim = max(nobles, key=lambda c: c.household.coin)
-    taken = victim.household.coin * 0.6
-    victim.household.coin -= taken
-    ctx.nation.treasury.coin += taken + 20
-    victim.adjust_affinity(ctx.char.id, -0.5)
-    _realm(ctx, stability=-3)
-    return f"The estates of {victim.full_name} were seized."
-
-
-# --- noble -------------------------------------------------------------------
-
-
-def _administer(ctx):
-    _local(ctx, stability=2, prosperity=1)
-    ctx.char.household.coin += 4
-    return "Your lands were well run."
-
-
-def _skim(ctx):
-    amount = min(15, ctx.nation.treasury.coin)
-    ctx.nation.treasury.coin -= amount
-    ctx.char.household.coin += amount
-    _realm(ctx, stability=-1)
-    return "The accounts balanced, on paper."
-
-
-def _counsel(ctx):
-    ruler = ctx.state.ruler
-    if not ruler or ruler.is_player:
-        return "There was no one to counsel."
-    tendencies.pull_toward(ruler.tendencies, ctx.char.tendencies, 0.1)
-    ruler.adjust_affinity(ctx.char.id, 0.1)
-    return f"{ruler.name} listened to your counsel."
-
-
-def _patronise(ctx):
-    advance(ctx.nation, "arts", 2)
-    return "Painters and poets found a patron in you."
-
-
-def _hunt(ctx):
-    _heal(ctx.char, 2)
-    for c in ctx.state.living():
-        if c.station == "noble" and not c.is_player:
-            c.adjust_affinity(ctx.char.id, 0.05)
-    return "The hunt was good and the company better."
-
-
-def _judge(ctx):
-    _local(ctx, stability=3)
-    return "A quarrel was settled fairly."
-
-
-def _squeeze(ctx):
-    ctx.char.household.food += 10
-    ctx.char.household.coin += 6
-    _local(ctx, stability=-2, prosperity=-2)
-    return "Your tenants paid more than they could spare."
-
-
-# --- scholar -------------------------------------------------------------------
-
-
-def _teach(ctx):
-    advance(ctx.nation, "learning", 1.5)
-    ctx.char.household.coin += 2
-    return "Your pupils learned their letters."
-
-
-def _study(ctx):
-    advance(ctx.nation, "learning", 1)
-    return "You read deep into the old texts."
-
-
-def _tend_sick(ctx):
-    _local(ctx, stability=1)
-    s = ctx.settlement
-    s.population *= 1.005
-    if ctx.rng.random() < 0.2:
-        _heal(ctx.char, -10)
-        return "You nursed the sick, and caught a fever for your trouble."
-    return "You nursed the sick through the cold months."
-
-
-def _rites(ctx):
-    _local(ctx, stability=2)
-    advance(ctx.nation, "arts", 1)
-    return "The seasonal rites were kept."
-
-
-def _patron(ctx):
-    ctx.char.household.coin += 10
-    return "A wealthy patron took an interest in you."
-
-
-def _solitude(ctx):
-    _heal(ctx.char, 5)
-    for c in _family(ctx):
-        c.adjust_affinity(ctx.char.id, -0.05)
-    return "You withdrew from the world for a season."
-
-
-def _treatise(ctx):
-    advance(ctx.nation, "learning", 3)
-    advance(ctx.nation, "arts", 1)
-    return "Your treatise was copied and passed around."
-
-
-# --- merchant ------------------------------------------------------------------
-
-
-def _caravan(ctx):
-    _local(ctx, prosperity=1)
-    if ctx.rng.random() < 0.7:
-        ctx.char.household.coin += 24
-        return "The caravan came back laden."
-    return "The caravan was lost on the road."
-
-
-def _hoard(ctx):
-    ctx.char.household.food += 25
-    if ctx.settlement.food_balance < 0:
-        _local(ctx, stability=-3, prosperity=-2)
-        return "You bought up grain while others went short."
-    return "Your stores filled with grain."
-
-
-def _sell_fair(ctx):
-    ctx.char.household.food -= 15
-    ctx.char.household.coin += 12
-    ctx.state.modifiers["relief"] = ctx.state.modifiers.get("relief", 0.0) + 15
-    return "You sold grain at a fair price."
-
-
-def _has_grain(state, char):
-    return char.household.food >= 15
-
-
-def _fund_works(ctx):
-    s = ctx.settlement
-    if s.works.get("roads", 0) >= WORK_CAPS["roads"]:
-        _local(ctx, prosperity=2)
-        return f"You paid to mend the roads around {s.name}."
-    _build(ctx, s, "roads")
-    return f"You paid for a new road at {s.name}."
-
-
-def _lend(ctx):
-    if ctx.rng.random() < 0.85:
-        ctx.char.household.coin += 22
-        return "Your loans were repaid with interest."
-    return "A debtor vanished with your money."
-
-
-def _festival(ctx):
-    advance(ctx.nation, "arts", 1)
-    _local(ctx, stability=2)
-    return "The festival was the talk of the season."
-
-
-def _shave(ctx):
-    ctx.char.household.coin += 10
-    if ctx.rng.random() < 0.25:
-        ctx.char.household.coin -= 14
-        _local(ctx, stability=-1)
-        return "You were caught shaving the weights and fined."
-    return "No one noticed the weights were light."
-
-
-# --- artisan -------------------------------------------------------------------
-
-
-def _craft(ctx):
-    ctx.char.household.goods += 8
-    ctx.char.household.coin += 3
-    return "Your work sold steadily."
-
-
-def _commission(ctx):
-    ctx.char.household.coin += 12
-    ctx.char.household.goods -= 3
-    return "A grand commission paid well."
-
-
-def _apprentice(ctx):
-    _local(ctx, prosperity=1)
-    advance(ctx.nation, "learning", 0.3)
-    return "Your apprentice is shaping up."
-
-
-def _experiment(ctx):
-    if ctx.rng.random() < 0.35:
-        advance(ctx.nation, "learning", 2)
-        ctx.char.household.goods += 5
-        return "A new technique worked!"
-    return "The experiments came to nothing."
-
-
-def _repair(ctx):
-    _local(ctx, stability=2, prosperity=1)
-    return "The common buildings were mended."
-
-
-def _cut_corners(ctx):
-    ctx.char.household.coin += 8
-    _local(ctx, prosperity=-1)
-    return "Your work was quicker, and worse."
-
-
-def _guild_drink(ctx):
-    friend = _neighbour(ctx)
-    if friend:
-        friend.adjust_affinity(ctx.char.id, 0.1)
-    return "The guild hall was loud late into the night."
-
-
-# --- farmer --------------------------------------------------------------------
-
-
-def _fields(ctx):
-    fert = settlement_fertility(ctx.state, ctx.settlement)
-    gained = 14 * fert * ctx.state.modifiers.get("harvest", 1.0)
-    ctx.char.household.food += gained
-    return f"The fields yielded {gained:.0f} measures."
-
-
-def _clear_land(ctx):
-    ctx.char.household.food += 4
-    ctx.char.fortune = min(1.5, ctx.char.fortune + 0.05)
-    return "New ground was broken."
-
-
-def _help_neighbour(ctx):
-    friend = _neighbour(ctx)
-    _local(ctx, prosperity=1)
-    if friend:
-        friend.adjust_affinity(ctx.char.id, 0.15)
-        return f"You helped {friend.full_name} bring in the harvest."
-    return "You helped bring in a neighbour's harvest."
-
-
-def _market(ctx):
-    ctx.char.household.coin += 6
-    return "You sold your produce at market."
-
-
-def _offering(ctx):
-    _local(ctx, stability=1)
-    return "You brought an offering to the shrine."
-
-
-def _poach(ctx):
-    ctx.char.household.food += 8
-    if ctx.rng.random() < 0.25:
-        ctx.char.household.coin -= 6
-        _heal(ctx.char, -5)
-        return "The lord's men caught you poaching."
-    return "There was meat on the table."
-
-
-def _tavern(ctx):
-    _heal(ctx.char, -1)
-    friend = _neighbour(ctx)
-    if friend:
-        friend.adjust_affinity(ctx.char.id, 0.05)
-    return "The tavern was warm."
-
-
-# --- obligations (offered only when an event calls for them) -------------------
-
-
-def _tend_relative(ctx):
-    target = ctx.state.character(ctx.event.target_id) if ctx.event else None
-    if target and target.alive:
-        _heal(target, 15)
-        target.adjust_affinity(ctx.char.id, 0.25)
-        return f"You stayed at {target.name}'s side."
-    return "You came, but too late."
-
-
-def _shelter(ctx):
-    ctx.char.household.food = max(0.0, ctx.char.household.food - 3)
-    return "The stranger slept by your fire and left at dawn."
-
-
-def _grievances(ctx):
-    if ctx.char.station == "ruler":
-        _realm(ctx, stability=6)
-    else:
-        _local(ctx, stability=4)
-    return "Grievances were heard and some were answered."
-
-
-def _share_food(ctx):
-    given = min(10.0, ctx.char.household.food)
-    ctx.char.household.food -= given
-    ctx.state.modifiers["relief"] = ctx.state.modifiers.get("relief", 0.0) + given
-    return "You shared what you had."
-
-
-def _settle_debt(ctx):
-    target = ctx.state.character(ctx.event.target_id) if ctx.event else None
-    given = min(10.0, ctx.char.household.coin)
-    ctx.char.household.coin -= given
-    if target:
-        target.household.coin += given
-        target.adjust_affinity(ctx.char.id, 0.3)
-    return "You paid a relative's debt."
-
-
-def _watchmen(ctx):
-    _realm(ctx, prosperity=2)
-    return "Watchmen were posted on the roads."
-
-
-def _rebuild(ctx):
-    _local(ctx, stability=2, prosperity=2)
-    return "You helped rebuild what the fire took."
-
-
-ACTIONS = {
-    a.id: a
-    for a in [
-        # everyone
-        Action(
-            "care_family",
-            "Look after your family",
-            "Time and care for those closest to you.",
-            (),
-            ("caring",),
-            0.04,
-            _care_family,
-            {"food": 2},
-            scope="own",
-            requires=_has_family,
-        ),
-        Action("rest", "Rest and recover", "Let the body mend.", (), (), 0.0, _rest, scope="own"),
-        Action(
-            "reflect",
-            "Spend the year quietly",
-            "Walk, think, keep your own counsel.",
-            (),
-            ("contemplative",),
-            0.05,
-            _reflect,
-            scope="own",
-        ),
-        Action(
-            "revel",
-            "Feast and make merry",
-            "Good food, good drink, good friends.",
-            (),
-            ("indulgent",),
-            -0.04,
-            _revel,
-            {"food": 3, "coin": 2},
-            scope="own",
-        ),
-        Action(
-            "seek_match",
-            "Seek a match",
-            "Find someone to share your life with.",
-            (),
-            ("caring", "ambitious"),
-            0.0,
-            _seek_match,
-            {"coin": 3},
-            scope="own",
-            requires=_unmarried,
-        ),
-        Action(
-            "raise_children",
-            "Raise your children",
-            "Your children learn from how you live.",
-            (),
-            ("caring",),
-            0.03,
-            _raise_children,
-            scope="own",
-            requires=_has_young_children,
-        ),
-        # ruler
-        Action(
-            "hold_court",
-            "Hold court",
-            "Hear petitions from across the realm.",
-            ("ruler",),
-            ("caring", "diligent"),
-            0.05,
-            _hold_court,
-            {"coin": 20},
-        ),
-        Action(
-            "raise_taxes",
-            "Raise taxes",
-            "More for the treasury, less for everyone else.",
-            ("ruler",),
-            ("acquisitive", "harsh"),
-            -0.06,
-            _raise_taxes,
-        ),
-        Action(
-            "lower_taxes",
-            "Lower taxes",
-            "Ease the burden on your people.",
-            ("ruler",),
-            ("generous",),
-            0.05,
-            _lower_taxes,
-        ),
-        Action(
-            "irrigation",
-            "Commission irrigation",
-            "Dig channels where the harvest is poorest.",
-            ("ruler",),
-            ("diligent",),
-            0.01,
-            _irrigation,
-            {"coin": 60, "goods": 40},
-            requires=_can_build("irrigation"),
-        ),
-        Action(
-            "granary",
-            "Build granaries",
-            "Store against bad years.",
-            ("ruler",),
-            ("diligent", "caring"),
-            0.02,
-            _granary,
-            {"coin": 40, "goods": 30},
-            requires=_can_build("granary"),
-        ),
-        Action(
-            "school",
-            "Endow a school",
-            "Learning, slowly, for everyone.",
-            ("ruler",),
-            ("studious", "generous"),
-            0.03,
-            _school,
-            {"coin": 50, "goods": 20},
-            requires=_can_build("school"),
-        ),
-        Action(
-            "shrine",
-            "Raise a shrine",
-            "A place for rites and for art.",
-            ("ruler",),
-            ("contemplative", "generous"),
-            0.03,
-            _shrine,
-            {"coin": 45, "goods": 25},
-            requires=_can_build("shrine"),
-        ),
-        Action(
-            "roads",
-            "Lay roads",
-            "Trade follows the road.",
-            ("ruler",),
-            ("diligent", "ambitious"),
-            0.01,
-            _roads,
-            {"coin": 40, "goods": 30},
-            requires=_can_build("roads"),
-        ),
-        Action(
-            "display",
-            "Stage a grand display",
-            "Remind everyone who rules.",
-            ("ruler",),
-            ("indulgent", "ambitious"),
-            -0.05,
-            _display,
-            {"coin": 50, "food": 40},
-        ),
-        Action(
-            "relieve",
-            "Open the royal stores",
-            "Feed those who are going hungry.",
-            ("ruler",),
-            ("generous", "caring"),
-            0.08,
-            _relieve,
-            {"food": 60},
-        ),
-        Action(
-            "tutor_heir",
-            "Tutor your heir",
-            "Shape the one who comes after you.",
-            ("ruler",),
-            ("caring", "studious"),
-            0.03,
-            _tutor_heir,
-            {"coin": 5},
-            requires=_has_heir,
-        ),
-        Action(
-            "seize",
-            "Seize a noble's estates",
-            "The crown's need is greater.",
-            ("ruler",),
-            ("acquisitive", "harsh"),
-            -0.1,
-            _seize,
-        ),
-        # noble
-        Action(
-            "administer",
-            "Administer your lands",
-            "Keep your holdings orderly.",
-            ("noble",),
-            ("diligent",),
-            0.02,
-            _administer,
-        ),
-        Action(
-            "skim",
-            "Skim from the levies",
-            "Who would notice a little?",
-            ("noble",),
-            ("acquisitive",),
-            -0.07,
-            _skim,
-        ),
-        Action(
-            "counsel",
-            "Counsel the ruler",
-            "Bend the ruler's ear your way.",
-            ("noble",),
-            ("ambitious", "studious"),
-            0.02,
-            _counsel,
-        ),
-        Action(
-            "patronise",
-            "Patronise artists",
-            "Fund painters and poets.",
-            ("noble",),
-            ("generous",),
-            0.03,
-            _patronise,
-            {"coin": 10},
-        ),
-        Action(
-            "hunt",
-            "Hunt with your peers",
-            "Sport, wine and alliances.",
-            ("noble",),
-            ("indulgent",),
-            -0.03,
-            _hunt,
-            {"coin": 6, "food": 4},
-        ),
-        Action(
-            "judge",
-            "Judge local disputes",
-            "Settle quarrels fairly.",
-            ("noble",),
-            ("caring", "diligent"),
-            0.04,
-            _judge,
-        ),
-        Action(
-            "squeeze",
-            "Squeeze your tenants",
-            "Rents are what you say they are.",
-            ("noble",),
-            ("harsh", "acquisitive"),
-            -0.08,
-            _squeeze,
-        ),
-        # scholar
-        Action(
-            "teach",
-            "Teach the young",
-            "Letters and numbers for whoever comes.",
-            ("scholar",),
-            ("generous", "studious"),
-            0.04,
-            _teach,
-        ),
-        Action(
-            "study",
-            "Study the old texts",
-            "Read, copy, understand.",
-            ("scholar",),
-            ("studious", "contemplative"),
-            0.02,
-            _study,
-        ),
-        Action(
-            "tend_sick",
-            "Tend the sick",
-            "Nurse those no one else will.",
-            ("scholar",),
-            ("caring", "generous"),
-            0.07,
-            _tend_sick,
-            {"food": 2},
-        ),
-        Action(
-            "rites",
-            "Lead the seasonal rites",
-            "Keep the old observances.",
-            ("scholar",),
-            ("contemplative", "caring"),
-            0.03,
-            _rites,
-        ),
-        Action(
-            "patron",
-            "Court a wealthy patron",
-            "Learning needs funding.",
-            ("scholar",),
-            ("ambitious", "acquisitive"),
-            -0.02,
-            _patron,
-        ),
-        Action(
-            "solitude",
-            "Withdraw into solitude",
-            "Leave the world alone for a while.",
-            ("scholar",),
-            ("contemplative",),
-            0.04,
-            _solitude,
-        ),
-        Action(
-            "treatise",
-            "Write a treatise",
-            "Put your understanding into words.",
-            ("scholar",),
-            ("studious", "ambitious"),
-            0.0,
-            _treatise,
-            {"goods": 2, "coin": 2},
-        ),
-        # merchant
-        Action(
-            "caravan",
-            "Send a caravan",
-            "Risk goods for profit on the roads.",
-            ("merchant",),
-            ("ambitious", "diligent"),
-            0.0,
-            _caravan,
-            {"goods": 8, "coin": 4},
-        ),
-        Action(
-            "hoard",
-            "Buy up grain",
-            "Buy cheap, sell dear.",
-            ("merchant",),
-            ("acquisitive",),
-            -0.08,
-            _hoard,
-            {"coin": 12},
-        ),
-        Action(
-            "sell_fair",
-            "Sell grain at a fair price",
-            "Feed people without fleecing them.",
-            ("merchant",),
-            ("caring", "diligent"),
-            0.04,
-            _sell_fair,
-            requires=_has_grain,
-        ),
-        Action(
-            "fund_works",
-            "Fund a public work",
-            "Pay for a road others will use.",
-            ("merchant",),
-            ("generous",),
-            0.06,
-            _fund_works,
-            {"coin": 25},
-        ),
-        Action(
-            "lend",
-            "Lend at interest",
-            "Money makes money.",
-            ("merchant",),
-            ("acquisitive",),
-            -0.02,
-            _lend,
-            {"coin": 15},
-        ),
-        Action(
-            "festival",
-            "Sponsor a festival",
-            "Music and lanterns, at your expense.",
-            ("merchant",),
-            ("generous", "indulgent"),
-            0.01,
-            _festival,
-            {"coin": 15, "food": 5},
-        ),
-        Action(
-            "shave",
-            "Shave the weights",
-            "A little light on every scale.",
-            ("merchant",),
-            ("acquisitive", "harsh"),
-            -0.09,
-            _shave,
-        ),
-        # artisan
-        Action(
-            "craft",
-            "Craft goods for market",
-            "Honest work, steadily sold.",
-            ("artisan",),
-            ("diligent",),
-            0.01,
-            _craft,
-        ),
-        Action(
-            "commission",
-            "Take a grand commission",
-            "Work for the wealthy.",
-            ("artisan",),
-            ("ambitious",),
-            0.0,
-            _commission,
-        ),
-        Action(
-            "apprentice",
-            "Train an apprentice",
-            "Pass on what you know.",
-            ("artisan",),
-            ("generous", "caring"),
-            0.04,
-            _apprentice,
-        ),
-        Action(
-            "experiment",
-            "Experiment with techniques",
-            "Most attempts fail.",
-            ("artisan",),
-            ("studious",),
-            0.01,
-            _experiment,
-            {"goods": 3},
-        ),
-        Action(
-            "repair",
-            "Repair the commons",
-            "Mend what everyone uses.",
-            ("artisan",),
-            ("generous",),
-            0.05,
-            _repair,
-            {"goods": 4},
-        ),
-        Action(
-            "cut_corners",
-            "Cut corners",
-            "Faster, cheaper, worse.",
-            ("artisan",),
-            ("acquisitive",),
-            -0.05,
-            _cut_corners,
-        ),
-        Action(
-            "guild_drink",
-            "Drink with the guild",
-            "The guild hall stays open late.",
-            ("artisan",),
-            ("indulgent",),
-            -0.02,
-            _guild_drink,
-            {"coin": 3},
-        ),
-        # farmer
-        Action(
-            "fields",
-            "Work the fields",
-            "From first light to last.",
-            ("farmer",),
-            ("diligent",),
-            0.01,
-            _fields,
-        ),
-        Action(
-            "clear_land",
-            "Clear new land",
-            "More ground, for later.",
-            ("farmer",),
-            ("diligent", "ambitious"),
-            0.0,
-            _clear_land,
-        ),
-        Action(
-            "help_neighbour",
-            "Help a neighbour's harvest",
-            "They'd do the same. Maybe.",
-            ("farmer",),
-            ("generous", "caring"),
-            0.06,
-            _help_neighbour,
-        ),
-        Action(
-            "market",
-            "Take produce to market",
-            "Turn grain into coin.",
-            ("farmer",),
-            ("ambitious",),
-            0.0,
-            _market,
-            {"food": 8},
-        ),
-        Action(
-            "offering",
-            "Bring an offering to the shrine",
-            "A share of the harvest.",
-            ("farmer",),
-            ("contemplative", "generous"),
-            0.03,
-            _offering,
-            {"food": 3},
-        ),
-        Action(
-            "poach",
-            "Poach in the lord's woods",
-            "Hungry is hungry.",
-            ("farmer",),
-            ("acquisitive",),
-            -0.04,
-            _poach,
-        ),
-        Action(
-            "tavern",
-            "Drink at the tavern",
-            "A warm room and loose talk.",
-            ("farmer",),
-            ("indulgent",),
-            -0.02,
-            _tavern,
-            {"coin": 2},
-        ),
-        # obligations
-        Action(
-            "tend_relative",
-            "Tend to them",
-            "Be there while they are ill.",
-            (),
-            ("caring",),
-            0.05,
-            _tend_relative,
-            scope="own",
-            obligation_only=True,
-        ),
-        Action(
-            "shelter",
-            "Give the stranger shelter",
-            "A meal and a place by the fire.",
-            (),
-            ("generous",),
-            0.05,
-            _shelter,
-            scope="own",
-            obligation_only=True,
-        ),
-        Action(
-            "grievances",
-            "Hear the grievances",
-            "Something has to be done.",
-            ("ruler", "noble"),
-            ("caring", "diligent"),
-            0.04,
-            _grievances,
-            {"coin": 10},
-            obligation_only=True,
-        ),
-        Action(
-            "share_food",
-            "Share your food",
-            "Your neighbours are hungry.",
-            (),
-            ("generous",),
-            0.06,
-            _share_food,
-            scope="own",
-            obligation_only=True,
-        ),
-        Action(
-            "settle_debt",
-            "Pay their debt",
-            "Family is family.",
-            (),
-            ("generous", "caring"),
-            0.05,
-            _settle_debt,
-            scope="own",
-            obligation_only=True,
-        ),
-        Action(
-            "watchmen",
-            "Post watchmen on the roads",
-            "Make the roads safe again.",
-            ("ruler",),
-            ("diligent", "caring"),
-            0.03,
-            _watchmen,
-            {"coin": 25},
-            obligation_only=True,
-        ),
-        Action(
-            "rebuild",
-            "Help rebuild",
-            "The fire took homes as well as stores.",
-            (),
-            ("generous", "diligent"),
-            0.04,
-            _rebuild,
-            scope="own",
-            obligation_only=True,
-        ),
-    ]
-}
+def _has_young(state, char):
+    return bool(_young_children(state, char))
+
+
+def _stores_have(amount):
+    return lambda state, char: state.nation.stores.get("food") >= amount
+
+
+def _raided(state, char):
+    return any(e.kind == "raid" for e in state.events)
+
+
+ACTION_LIST = [
+    # anyone
+    Action(
+        "care_family",
+        "Look after your family",
+        "Mend, provide and spend time with your kin.",
+        (),
+        ("caring",),
+        0.03,
+        _care_family,
+        {"hands": 2},
+        requires=_has_family,
+    ),
+    Action(
+        "rest",
+        "Rest",
+        "Let the year pass gently and recover your strength.",
+        (),
+        (),
+        0.0,
+        _rest,
+    ),
+    Action(
+        "share_food",
+        "Share your food",
+        "Give some of what your family has to those who have little.",
+        (),
+        ("generous",),
+        0.05,
+        _share_food,
+        {"food": 6},
+    ),
+    Action(
+        "feast",
+        "Eat and make merry",
+        "Enjoy what you have while you have it.",
+        (),
+        ("indulgent",),
+        -0.01,
+        _feast,
+        {"food": 5},
+    ),
+    Action(
+        "take_more",
+        "Take more than your share",
+        "Help yourself from the common stores.",
+        (),
+        ("acquisitive",),
+        -0.05,
+        _take_more,
+        requires=_stores_have(1),
+    ),
+    Action(
+        "boast",
+        "Make your worth known",
+        "Make sure everyone hears what you have done.",
+        (),
+        ("ambitious",),
+        -0.01,
+        _boast,
+        {"hands": 1},
+    ),
+    Action(
+        "sit_alone",
+        "Sit alone with the unseen",
+        "Spend the evenings apart, listening.",
+        (),
+        ("contemplative",),
+        0.02,
+        _sit_alone,
+    ),
+    Action(
+        "shame_idler",
+        "Shame an idler",
+        "Make an example of someone who does not pull their weight.",
+        (),
+        ("harsh",),
+        -0.05,
+        _shame_idler,
+    ),
+    Action(
+        "teach_child",
+        "Teach your children",
+        "Keep your young ones by you and show them how things are done.",
+        (),
+        ("caring", "studious"),
+        0.03,
+        _teach_child,
+        {"hands": 1},
+        requires=_has_young,
+    ),
+    # the leader
+    Action(
+        "call_together",
+        "Call the people together",
+        "Bring the camps together to talk and settle things.",
+        ("leader",),
+        ("caring",),
+        0.02,
+        _call_together,
+        {"regard": 4},
+    ),
+    Action(
+        "open_stores",
+        "Open the common stores",
+        "Let whoever is hungry take from what is held in common.",
+        ("leader",),
+        ("generous",),
+        0.05,
+        _open_stores,
+        {"food": 20},
+        scope="people",
+    ),
+    Action(
+        "great_hunt",
+        "Lead a great hunt",
+        "Take the strongest hunters out for meat for everyone.",
+        ("leader",),
+        ("diligent", "ambitious"),
+        0.0,
+        _great_hunt,
+        {"hands": 8},
+        scope="people",
+    ),
+    Action(
+        "larger_share",
+        "Take a larger share",
+        "The leader's family deserves more.",
+        ("leader",),
+        ("acquisitive",),
+        -0.05,
+        _larger_share,
+        requires=_stores_have(1),
+    ),
+    Action(
+        "drive_out",
+        "Drive out a troublemaker",
+        "Someone stirs up trouble. Be rid of them.",
+        ("leader",),
+        ("harsh",),
+        -0.06,
+        _drive_out,
+        {"regard": 3},
+    ),
+    Action(
+        "settle_quarrels",
+        "Settle quarrels",
+        "Hear out every grievance and decide.",
+        ("leader",),
+        ("caring", "contemplative"),
+        0.03,
+        _settle_quarrels,
+        {"regard": 2},
+    ),
+    # keepers
+    Action(
+        "sing_songs",
+        "Sing the old songs",
+        "Keep what the people know alive by teaching it.",
+        ("keeper",),
+        ("studious", "contemplative"),
+        0.02,
+        _sing_songs,
+        {"hands": 2},
+    ),
+    Action(
+        "tend_sick",
+        "Tend the sick",
+        "Go from shelter to shelter with herbs and songs.",
+        ("keeper",),
+        ("caring",),
+        0.05,
+        _tend_sick,
+        {"hands": 2, "food": 2},
+    ),
+    Action(
+        "read_omens",
+        "Read the omens",
+        "Tell the people what the signs say.",
+        ("keeper",),
+        ("contemplative", "ambitious"),
+        0.0,
+        _read_omens,
+    ),
+    Action(
+        "hold_secrets",
+        "Keep the deepest songs to yourself",
+        "Knowledge is worth more when few have it.",
+        ("keeper",),
+        ("acquisitive", "ambitious"),
+        -0.03,
+        _hold_secrets,
+    ),
+    # hunters
+    Action(
+        "hunt",
+        "Hunt",
+        "Go after game for your family.",
+        ("hunter",),
+        ("diligent",),
+        0.01,
+        _hunt,
+        {"hands": 3},
+    ),
+    Action(
+        "share_kill",
+        "Share the kill",
+        "Bring what you kill back for the whole camp.",
+        ("hunter",),
+        ("generous",),
+        0.04,
+        _share_kill,
+        {"hands": 3},
+    ),
+    Action(
+        "best_cut",
+        "Keep the best of the kill",
+        "You did the work; you eat first.",
+        ("hunter",),
+        ("acquisitive",),
+        -0.03,
+        _best_cut,
+        {"hands": 3},
+    ),
+    # gatherers
+    Action(
+        "forage",
+        "Forage",
+        "Gather roots, seeds and fruit for your family.",
+        ("gatherer",),
+        ("diligent",),
+        0.01,
+        _forage,
+        {"hands": 3},
+    ),
+    Action(
+        "show_plants",
+        "Show the young the plants",
+        "Teach which plants feed and which kill.",
+        ("gatherer", "planter"),
+        ("caring", "studious"),
+        0.03,
+        _show_plants,
+        {"hands": 2},
+    ),
+    # makers
+    Action(
+        "make_tools",
+        "Make tools for others",
+        "Knap and shape for whoever needs it.",
+        ("maker",),
+        ("generous", "diligent"),
+        0.03,
+        _make_tools,
+        {"hands": 3},
+    ),
+    Action(
+        "fine_work",
+        "Make something fine for yourself",
+        "Take your time over something beautiful.",
+        ("maker",),
+        ("indulgent",),
+        -0.01,
+        _fine_work,
+        {"hands": 3},
+    ),
+    # roles that come later
+    Action(
+        "fish",
+        "Fish",
+        "Work the water for your family.",
+        ("fisher",),
+        ("diligent",),
+        0.01,
+        _fish,
+        {"hands": 3},
+    ),
+    Action(
+        "tend_fields",
+        "Tend your fields",
+        "Plant, weed, guard and harvest.",
+        ("planter",),
+        ("diligent",),
+        0.01,
+        _tend_fields,
+        {"hands": 4},
+    ),
+    Action(
+        "help_neighbours",
+        "Help your neighbours",
+        "Lend your hands where they are short.",
+        ("planter", "herder", "fisher"),
+        ("generous", "caring"),
+        0.04,
+        _help_neighbours,
+        {"hands": 3},
+    ),
+    Action(
+        "tend_herd",
+        "Tend your herd",
+        "Move the beasts to good grazing and keep them safe.",
+        ("herder",),
+        ("diligent",),
+        0.01,
+        _tend_herd,
+        {"hands": 3},
+    ),
+    Action(
+        "trade",
+        "Carry goods between families",
+        "Find who has what, and who wants it.",
+        ("trader",),
+        ("diligent",),
+        0.01,
+        _trade,
+        {"hands": 2},
+    ),
+    Action(
+        "hard_bargain",
+        "Drive hard bargains",
+        "Make sure every trade favours you.",
+        ("trader",),
+        ("acquisitive",),
+        -0.04,
+        _hard_bargain,
+        {"hands": 2},
+    ),
+    # what events ask of people
+    Action(
+        "tend_relative",
+        "Tend them",
+        "Stay by their side and nurse them.",
+        (),
+        ("caring",),
+        0.05,
+        _tend_relative,
+        {"hands": 2, "food": 2},
+        obligation_only=True,
+    ),
+    Action(
+        "welcome_stranger",
+        "Take the stranger in",
+        "Share your fire and food.",
+        (),
+        ("generous",),
+        0.04,
+        _welcome_stranger,
+        {"food": 4},
+        obligation_only=True,
+    ),
+    Action(
+        "sit_with_dying",
+        "Sit with them",
+        "Keep them company to the end.",
+        (),
+        ("caring", "contemplative"),
+        0.04,
+        _sit_with_dying,
+        obligation_only=True,
+    ),
+    Action(
+        "search",
+        "Join the search",
+        "Go out and look.",
+        (),
+        ("caring",),
+        0.05,
+        _search,
+        {"hands": 3},
+        obligation_only=True,
+    ),
+    Action(
+        "judge_feud",
+        "Judge between them",
+        "Hear both families and decide what is owed.",
+        ("leader",),
+        ("contemplative", "caring"),
+        0.04,
+        _judge_feud,
+        {"regard": 3},
+        obligation_only=True,
+    ),
+    Action(
+        "make_peace",
+        "Make peace between them",
+        "Go between the families before blood is spilled.",
+        (),
+        ("generous", "caring"),
+        0.04,
+        _make_peace,
+        {"regard": 2},
+        obligation_only=True,
+    ),
+    Action(
+        "answer_raid",
+        "Seek redress",
+        "Go to the raiders and demand it stop, without more blood.",
+        ("leader",),
+        ("contemplative", "caring"),
+        0.02,
+        _answer_raid,
+        {"regard": 3},
+        obligation_only=True,
+    ),
+    Action(
+        "avenge_raid",
+        "Avenge the raid",
+        "Lead our people against the raiders.",
+        ("leader", "hunter"),
+        ("harsh", "ambitious"),
+        -0.08,
+        _avenge_raid,
+        {"hands": 6},
+        scope="people",
+        requires=_raided,
+    ),
+    Action(
+        "hunt_beast",
+        "Hunt the beast down",
+        "Go after it before it takes anyone else.",
+        ("leader", "hunter"),
+        ("diligent", "caring"),
+        0.03,
+        _hunt_beast,
+        {"hands": 4},
+        obligation_only=True,
+    ),
+]
+
+ACTIONS = {a.id: a for a in ACTION_LIST}
 
 
 def actions_for(state, char):
-    """Ordinary actions open to this character this year (no obligations)."""
-    out = []
-    for a in ACTIONS.values():
-        if a.obligation_only:
-            continue
-        if a.stations and char.station not in a.stations:
-            continue
-        if a.requires and not a.requires(state, char):
-            continue
-        out.append(a)
-    return out
-
-
-def is_adult(state, char):
-    return char.age(state.year) >= ADULT_AGE
+    """The deeds open to this character this year (not counting obligations)."""
+    return [
+        a
+        for a in ACTION_LIST
+        if not a.obligation_only
+        and (not a.stations or char.station in a.stations)
+        and (a.requires is None or a.requires(state, char))
+    ]
