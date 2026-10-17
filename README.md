@@ -1,14 +1,13 @@
 # Sankhara
 
-A nation builder without wars, lived one person at a time. Each turn is a
-year; you act as one character with a few slots of attention and your
-station's means. When you die the nation carries on, and so do you, as
-someone else within it. Built around Buddhist ideas of *saṅkhāra*, karma and
-rebirth, which shape the mechanics but are never named in the game. Written in
-Python with [Kivy](https://kivy.org).
+A game about a people, from a small band at their first fires to whatever
+they become, lived one person at a time. Each turn is a year; you act as one
+character with a few slots of attention and the means of your place among the
+people. Inspired by Buddhist thought. Written in Python with
+[Kivy](https://kivy.org).
 
-Status: Milestone 1, the core loop, is playable. See the
-[docs](https://janton42.github.io/sankhara/) for the design and roadmap.
+Status: early and playable. See the [docs](https://janton42.github.io/sankhara/)
+for the roadmap.
 
 ## Quick start
 

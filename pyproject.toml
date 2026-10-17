@@ -1,7 +1,7 @@
 [project]
 name = "sankhara"
 version = "0.1.0"
-description = "A turn-based hex-map world game built around Buddhist concepts of karma, rebirth, and lineage."
+description = "A game about a people over generations, lived one person at a time."
 readme = "README.md"
 license = "GPL-3.0-or-later"
 license-files = ["LICENSE"]
