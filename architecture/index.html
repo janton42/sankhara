@@ -600,7 +600,7 @@ game starts with a small band rather than a kingdom; this is how that is built:<
 </tr>
 <tr>
 <td>2–3 slots of personal attention</td>
-<td><code>stations.ACTION_SLOTS = 3</code>. A slot holds a one-year deed (<code>actions.py</code>), an answer to an obligation, or a multi-year project (<code>projects.py</code>).</td>
+<td><code>stations.ACTION_SLOTS = 3</code>. A slot holds a one-year deed (<code>actions.py</code>), an answer to an obligation, or a multi-year project (<code>projects.py</code>). Nothing is chosen for the player: slots start free, a chosen deed is kept up each year until changed or no longer possible, and a project's slot goes free when it ends (<code>game.begin_year</code>, <code>replan</code>).</td>
 </tr>
 <tr>
 <td>Lead from wherever you are</td>
@@ -611,8 +611,12 @@ game starts with a small band rather than a kingdom; this is how that is built:<
 <td>Works an earlier character of the player's worked on stay in play: the birth screen lists what was finished while the new character grew up and what is still unfinished and who carries it (<code>game.thread_lines</code>), and the chooser marks those works. <code>GameState.legacy</code> remembers finished works and settled customs the player had a hand in; the end-of-life screen shows them.</td>
 </tr>
 <tr>
-<td>Multi-year projects, run until interrupted</td>
-<td>A <code>Project</code> keeps its slot year after year until finished, set aside or stalled. Its cost, tags and karma count every year it is worked. <code>YearReport.interrupts</code> lists what should stop "Let the years pass": an obligation, a finished or stalled project, a discovery, a choice to make, strangers, a death or birth in the family, a life ending.</td>
+<td>Years that run on their own</td>
+<td>"Let the years pass" runs a clock (<code>GameView._tick</code>, <code>PACES</code>): a year lasts a few seconds, shown by a bar, so there is time to pause. News (<code>YearReport.interrupts</code>: an obligation, a finished or stalled project, a discovery, strangers, a death or birth) is shown with its year and makes that year last longer (<code>NEWS_LINGER</code>), but doesn't stop the years. Only a pop-up (a custom to decide or speak for) or a window the player opens holds the year; a life ending shows the life screen, and the years resume after it. A <code>Project</code> keeps its slot year after year until finished, set aside or stalled.</td>
+</tr>
+<tr>
+<td>Attending to the years, or letting them slip</td>
+<td><code>game.end_year(attended=...)</code>: a year the player steps through weighs slightly well (<code>ATTENDED_KARMA</code>); a year let pass with nothing taken up weighs slightly ill (<code>DRIFTED_KARMA</code>); a year let pass while working at something is neutral. Hidden like all karma.</td>
 </tr>
 <tr>
 <td>A coarse budget, no money at the start</td>
@@ -620,7 +624,7 @@ game starts with a small band rather than a kingdom; this is how that is built:<
 </tr>
 <tr>
 <td>Start as the first band, not a civilisation</td>
-<td><code>game.new_game()</code>: about 250 people in three camps, four known things (fire, stone edges, the old songs, a belief in the unseen whose form is random), a young leader whose mother has just died.</td>
+<td><code>game.new_game()</code>: about 250 people in three camps, four known things (fire, stone edges, the old songs, a belief in the unseen whose form is random), and a first character the people have lately come to look to, for a reason drawn at random (bringing the hunters home through the snows, driving off a bear, settling a quarrel, finding water). Their predecessor gave way or died; nothing is inherited.</td>
 </tr>
 <tr>
 <td>Development like Civilization, but not prescribed</td>
@@ -635,8 +639,8 @@ game starts with a small band rather than a kingdom; this is how that is built:<
 <td><code>stations.py</code>: leader, keeper, hunter, gatherer and maker at first; fisher, planter, herder and go-between appear with the discoveries that make them; hunters and gatherers grow rarer as herding and planting arrive. Rebirth draws from the roles that exist.</td>
 </tr>
 <tr>
-<td>How leaders are found can change</td>
-<td><code>people.next_leader()</code>: the most respected at first; later a council of elders, the strongest, or a lineage, depending on the form "how the people decide" takes. Titles follow (<code>nation.names</code>).</td>
+<td>Leadership is earned</td>
+<td><code>people.next_leader()</code> chooses among the most respected (<code>standing</code>: regard, plus a little for elders), weighted toward the top, with no favour for the old leader's kin. While a leader lives, <code>leadership_year()</code> lets them give way when old or frail, or lets the people turn to someone who far outshines them. Anyone respected enough can also ask the people to follow them (the <code>stand_forward</code> deed); it may fail and cost standing. Later the form of "how the people decide" can change this: a council of elders, the strongest, or a lineage (the only form that ties leading to a family). Titles follow (<code>nation.names</code>).</td>
 </tr>
 <tr>
 <td>Other peoples; violence real but not the focus</td>
@@ -660,7 +664,7 @@ game starts with a small band rather than a kingdom; this is how that is built:<
 </tr>
 <tr>
 <td>Tendencies, felt not shown</td>
-<td><code>tendencies.py</code>: choosing strengthens tags; declining a habitual default or setting a project aside weakens them. Inclinations change costs (±30%), order and tint in the chooser, and which deeds and projects are pre-filled in empty slots.</td>
+<td><code>tendencies.py</code>: choosing strengthens tags; setting a project aside weakens them. Inclinations change costs (±30%), and order and tint in the chooser.</td>
 </tr>
 <tr>
 <td>NPCs, same model simplified</td>
