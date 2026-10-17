@@ -600,11 +600,11 @@ game starts with a small band rather than a kingdom; this is how that is built:<
 </tr>
 <tr>
 <td>2–3 slots of personal attention</td>
-<td><code>stations.ACTION_SLOTS = 3</code>. A slot holds a one-year deed (<code>actions.py</code>), an answer to an obligation, or a multi-year project (<code>projects.py</code>). Nothing is chosen for the player: slots start free, a chosen deed is kept up each year until changed or no longer possible, and a project's slot goes free when it ends (<code>game.begin_year</code>, <code>replan</code>).</td>
+<td><code>stations.ACTION_SLOTS = 3</code>. <code>game.options()</code> offers three groups (<code>Option.group</code>): <strong>matters at hand</strong> (each <code>EventInstance</code> with <code>answers</code>, action ids open to the player's role; <code>events.offer()</code> fills them and marks the matter <code>expected</code> when the role has a plain duty in it), <strong>the people's works</strong> (<code>projects.py</code>; one of each kind of new work, aimed where it is needed most) and <strong>your own</strong> (personal projects and the lasting cares, <code>Action.care</code>). Nothing is chosen for the player: slots start free, a care is kept up until changed, an answer is kept up while its matter recurs (plan keys <code>a:&lt;matter key&gt;:&lt;action&gt;</code> are stable across years), and a project's slot goes free when it ends (<code>game.begin_year</code>, <code>replan</code>).</td>
 </tr>
 <tr>
 <td>Lead from wherever you are</td>
-<td>Most projects are <strong>the people's works</strong> (<code>Project.common</code>). Anyone can begin one with their own means (at half cost; slower), help with one someone else leads (each helper adds work), take up one left unfinished, or call others to it (<code>rally</code>: spends standing to add support, which adds work and draws NPC helpers). NPCs join works more readily when the one leading is respected or liked. When a leader dies or sets a work aside it passes to a helper, the people's leader or an elder (<code>projects.pass_on</code>), or waits for someone. A custom being settled lets anyone speak for a form; a respected voice weighs more (<code>game.choose_form</code>, <code>pending_mode</code>).</td>
+<td>Most projects are <strong>the people's works</strong> (<code>Project.common</code>). Finishing one earns its leader and helpers regard (<code>FINISH_REGARD</code>, <code>HELPED_REGARD</code>), so serving the people is the road to leading them. Anyone can begin one with their own means (at half cost; slower; camp works only at their own camp unless they lead), help with one someone else leads (each helper adds work), take up one left unfinished, or call others to it (<code>rally</code>: spends standing to add support, which adds work and draws NPC helpers). NPCs join works more readily when the one leading is respected or liked. When a leader dies or sets a work aside it passes to a helper, the people's leader or an elder (<code>projects.pass_on</code>), or waits for someone. A custom being settled lets anyone speak for a form; a respected voice weighs more (<code>game.choose_form</code>, <code>pending_mode</code>).</td>
 </tr>
 <tr>
 <td>The thread between lives</td>
@@ -612,7 +612,7 @@ game starts with a small band rather than a kingdom; this is how that is built:<
 </tr>
 <tr>
 <td>Years that run on their own</td>
-<td>"Let the years pass" runs a clock (<code>GameView._tick</code>, <code>PACES</code>): a year lasts a few seconds, shown by a bar, so there is time to pause. News (<code>YearReport.interrupts</code>: an obligation, a finished or stalled project, a discovery, strangers, a death or birth) is shown with its year and makes that year last longer (<code>NEWS_LINGER</code>), but doesn't stop the years. Only a pop-up (a custom to decide or speak for) or a window the player opens holds the year; a life ending shows the life screen, and the years resume after it. A <code>Project</code> keeps its slot year after year until finished, set aside or stalled.</td>
+<td>"Let the years pass" runs a clock (<code>GameView._tick</code>, <code>PACES</code>): a year lasts a few seconds, shown by a bar, so there is time to pause. News (<code>YearReport.interrupts</code>: something expected of you, a finished or stalled project, a discovery, strangers, a death or birth) is shown with its year and makes that year last longer (<code>NEWS_LINGER</code>), but doesn't stop the years. Only a pop-up (a custom to decide or speak for) or a window the player opens holds the year; a life ending shows the life screen, and the years resume after it. A <code>Project</code> keeps its slot year after year until finished, set aside or stalled.</td>
 </tr>
 <tr>
 <td>Attending to the years, or letting them slip</td>
@@ -644,11 +644,11 @@ game starts with a small band rather than a kingdom; this is how that is built:<
 </tr>
 <tr>
 <td>Other peoples; violence real but not the focus</td>
-<td><code>peoples.py</code>: three other peoples, simulated coarsely. They grow, learn, meet you, share ideas, intermarry, and drift toward or away from you. Raids come as events; the obligation is to seek redress; avenging is a harsh alternative answer. No armies.</td>
+<td><code>peoples.py</code>: three other peoples, simulated coarsely. They grow, learn, meet you, share ideas, intermarry, and drift toward or away from you. Raids come as matters at hand: the leader is expected to seek redress; avenging is a harsh other answer, and anyone can help the struck camp rebuild. No armies.</td>
 </tr>
 <tr>
 <td>Karma only on the action layer</td>
-<td>Deeds and projects carry a hidden <code>karma</code> for their intention; skipped obligations subtract <code>EventInstance.penalty</code>. Outcomes never touch it. Stored on <code>Soul.karma</code>, clamped to [-1, 1].</td>
+<td>Answers, cares and projects carry a hidden <code>karma</code> for their intention; an expected matter left unanswered subtracts <code>EventInstance.penalty</code>. Outcomes never touch it. Stored on <code>Soul.karma</code>, clamped to [-1, 1].</td>
 </tr>
 <tr>
 <td>Lives of 20–50 turns, random death age</td>
@@ -668,7 +668,7 @@ game starts with a small band rather than a kingdom; this is how that is built:<
 </tr>
 <tr>
 <td>NPCs, same model simplified</td>
-<td><code>npc.py</code>: tracked adults take on projects (elders and the leader always) and a deed a year by inclination; the leader also by the people's needs. Their deeds earn standing; only the leader's act on the people.</td>
+<td><code>npc.py</code>: tracked adults take on projects (elders and the leader always) and a deed a year by inclination, chosen from their cares and the answers to the matters the people's state raises (<code>events.lasting_answers</code>: hunger, quarrels, low stores, plenty); the leader also weighs the people's needs. Their deeds earn standing; only the leader's act on the people.</td>
 </tr>
 <tr>
 <td>No win condition</td>
@@ -682,8 +682,8 @@ game starts with a small band rather than a kingdom; this is how that is built:<
 <li><strong><code>game.py</code></strong>: founding the people, the options for a year, the yearly loop and its interrupts, choosing a custom's form, death and the next life.</li>
 <li><strong><code>discoveries.py</code></strong>: the web of ideas, their forms and combined effects, yearly insight.</li>
 <li><strong><code>projects.py</code></strong>: multi-year undertakings: working at ideas, ranging further, new camps, gathering places, store pits, fields, teaching, raising a child, apprentices, friendship and trade with other peoples...</li>
-<li><strong><code>actions.py</code></strong>: one-year deeds for each role, and the answers events ask for.</li>
-<li><strong><code>events.py</code></strong>: event definitions, yearly generation, obligation resolution (including alternative answers).</li>
+<li><strong><code>actions.py</code></strong>: one-year deeds: lasting cares for each role, and the answers to matters at hand.</li>
+<li><strong><code>events.py</code></strong>: news and matters at hand (what lasts with the people's state, what comes by chance, what each role meets), their answers, yearly generation and resolution.</li>
 <li><strong><code>nation.py</code></strong>: each camp's food from its land (falling as it fills up), hunger and growth, what goes into the common stores, cohesion (which strains as the people grow), plenty and lore; each tracked family's means.</li>
 <li><strong><code>people.py</code></strong>: creating characters, families, ageing, marriage (sometimes to other peoples) and births, finding a new leader, keeping a few elders.</li>
 <li><strong><code>peoples.py</code></strong>, <strong><code>stations.py</code></strong>, <strong><code>tendencies.py</code></strong>, <strong><code>npc.py</code></strong>, <strong><code>world.py</code></strong> (cached map per seed, foraging values, place names), <strong><code>save.py</code></strong> (JSON).</li>
