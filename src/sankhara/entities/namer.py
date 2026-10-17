@@ -3,20 +3,21 @@ import random
 from sankhara.constants.config import CULTURE_GROUPS
 
 
-def make_name(elevation, gender):
-    first_name = ""
+def _join(rng, stems, suffixes):
+    return (rng.choice(stems) + rng.choice(suffixes).split("-")[1]).capitalize()
+
+
+def make_first_name(culture, gender, rng=random):
+    group = CULTURE_GROUPS[culture]
     if gender == "male":
-        first_name = (
-            random.sample(CULTURE_GROUPS[elevation]["male_stems"], 1)[0]
-            + random.sample(CULTURE_GROUPS[elevation]["male_suffixes"], 1)[0].split("-")[1]
-        )
-    elif gender == "female":
-        first_name = (
-            random.sample(CULTURE_GROUPS[elevation]["female_stems"], 1)[0]
-            + random.sample(CULTURE_GROUPS[elevation]["female_suffixes"], 1)[0].split("-")[1]
-        )
-    last_name = (
-        random.sample(CULTURE_GROUPS[elevation]["last_stems"], 1)[0]
-        + random.sample(CULTURE_GROUPS[elevation]["last_suffixes"], 1)[0].split("-")[1]
-    )
-    return f"{first_name.capitalize()} {last_name.capitalize()}"
+        return _join(rng, group["male_stems"], group["male_suffixes"])
+    return _join(rng, group["female_stems"], group["female_suffixes"])
+
+
+def make_family_name(culture, rng=random):
+    group = CULTURE_GROUPS[culture]
+    return _join(rng, group["last_stems"], group["last_suffixes"])
+
+
+def make_name(elevation, gender, rng=random):
+    return f"{make_first_name(elevation, gender, rng)} {make_family_name(elevation, rng)}"
