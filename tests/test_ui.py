@@ -79,19 +79,46 @@ def test_hidden_ideas_never_appear_on_screen():
         assert word not in text
 
 
-def test_letting_the_years_pass_stops_when_needed():
+def test_the_years_keep_passing_through_news():
     view, ended = make_view()
     state = view.state
     start = state.year
     view.toggle_auto()
     assert view.auto_event is not None
-    for _ in range(60):
-        if view.auto_event is None:
+    for _ in range(30):
+        if ended:
             break
+        if state.pending_choice:
+            view.choice_popup._choose(discoveries.DISCOVERIES[state.pending_choice].forms[0].id)
         view.auto_step()
-    assert view.auto_event is None
-    assert state.year > start
-    assert view.year.notice or ended
+    assert state.year > start + 10 or ended
+    assert view.year.notices  # news was shown, but the years went on
+    assert view.auto_event is not None or ended
+    view.stop_auto()
+
+
+def test_a_year_takes_time_and_waits_for_an_open_window():
+    view, _ = make_view()
+    state = view.state
+    start = state.year
+    view.start_auto()
+    view._tick(view.year_length / 2)
+    assert state.year == start and 0.4 < view.year.bar.value < 0.6
+    chooser = ChooserPopup(state, 0, on_pick=lambda: None)
+    chooser.open()
+    view._tick(view.year_length)
+    assert state.year == start  # held while the player looks
+    chooser.dismiss(animation=False)
+    view._tick(view.year_length)
+    assert state.year == start + 1
+    view.stop_auto()
+
+
+def test_pace_can_be_changed():
+    view, _ = make_view()
+    first = view.year.pace_button.text
+    view.change_pace()
+    assert view.year.pace_button.text != first
 
 
 def test_a_new_custom_asks_how_it_should_be():

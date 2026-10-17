@@ -6,6 +6,8 @@ respected elders, the player's family and a few neighbours. Everyone else is the
 camps' population figures.
 """
 
+import math
+
 from sankhara.entities.namer import make_family_name, make_first_name
 from sankhara.sim import discoveries
 from sankhara.sim.state import Budget, Character
@@ -238,6 +240,20 @@ def yearly_lifecycle(state, protect=()):
 
 
 # --- who leads --------------------------------------------------------------
+#
+# A people this young has no settled way of passing on leadership: whoever the people
+# look to most leads them, and they can turn to someone else while the leader lives.
+# Only a custom of lineage, if they come to one, ties it to a family.
+
+LEADER_AGE = 20
+ELDER_STANDING = 8  # how much being an elder adds to someone's standing
+STEP_ASIDE_AGE = 62
+FRAIL_HEALTH = 30
+STEP_ASIDE_CHANCE = 0.3  # a year in which a frail or old leader gives way
+TURN_MARGIN = 1.3  # how far someone must outshine the leader before the people turn
+TURN_LEAD = 10
+TURN_CHANCE = 0.2
+CANDIDATES = 4  # the most respected, among whom the people choose
 
 
 def _adults(state, min_age=ADULT_AGE):
@@ -250,32 +266,62 @@ def _strength(char):
     return char.health / 100 + t.get("ambitious", 0) + t.get("harsh", 0) + standing
 
 
-def next_leader(state, old):
-    """Who the people turn to when the leader is gone, by their custom."""
+def standing(char):
+    """How much the people look to someone."""
+    return char.means.get("regard") + (ELDER_STANDING if char.is_elder else 0)
+
+
+def _heir(state, old):
+    kids = [state.character(c) for c in old.children] if old else []
+    kids = [k for k in kids if k and k.alive and k.age(state.year) >= ADULT_AGE]
+    return min(kids, key=lambda k: k.birth_year) if kids else None
+
+
+def next_leader(state, old, rng=None):
+    """Who the people turn to when the leader is gone (or giving way), by their custom."""
     rule = state.nation.succession
-    if rule == "lineage" and old:
-        kids = [state.character(c) for c in old.children]
-        kids = sorted(
-            (k for k in kids if k and k.alive and k.age(state.year) >= ADULT_AGE),
-            key=lambda k: k.birth_year,
-        )
-        if kids:
-            return kids[0]
+    if rule == "lineage":
+        heir = _heir(state, old)
+        if heir:
+            return heir
     if rule == "strongest":
-        adults = _adults(state, 20)
+        adults = [c for c in _adults(state, LEADER_AGE) if c is not old]
         if adults:
             return max(adults, key=_strength)
-    min_age = ELDER_AGE if rule == "council" else 20
-    candidates = _adults(state, min_age) or _adults(state)
+    min_age = ELDER_AGE if rule == "council" else LEADER_AGE
+    candidates = [c for c in _adults(state, min_age) if c is not old] or [
+        c for c in _adults(state) if c is not old
+    ]
     if not candidates:
         return None
+    # the people choose among those they look to most; the most respected usually,
+    # but not always
+    candidates = sorted(candidates, key=standing, reverse=True)[:CANDIDATES]
+    if rng is None:
+        return candidates[0]
+    top = standing(candidates[0])
+    weights = [math.exp((standing(c) - top) / 8) for c in candidates]
+    return rng.choices(candidates, weights)[0]
 
-    # the most respected, and (by habit) a little toward the old leader's kin
-    def standing(c):
-        kin = 8 if old and old.id in (c.mother_id, c.father_id) else 0
-        return c.means.get("regard") + kin + (20 if c.is_elder else 0)
 
-    return max(candidates, key=standing)
+def make_leader(state, new):
+    old = state.leader
+    if old and old.alive and old is not new:
+        old.station = old.former_station or "keeper"
+        old.former_station = ""
+    if new.station != "leader":
+        new.former_station = new.station
+    new.station = "leader"
+    new.is_elder = False
+    new.settlement_id = state.seat.id
+    state.nation.leader_id = new.id
+    state.nation.leading_family = new.family_name
+
+
+def _turned_to(new):
+    if new.is_player:
+        return "[b]The people have turned to you to lead them.[/b]"
+    return f"The people now look to {new.full_name} to lead them."
 
 
 def succeed(state):
@@ -283,18 +329,40 @@ def succeed(state):
     leader = state.leader
     if leader and leader.alive:
         return ""
-    nation = state.nation
-    new = next_leader(state, leader)
+    new = next_leader(state, leader, state.rng())
     if new is None:
-        new = create_character(state, "leader", state.seat.id, state.year - 35)
-    new.station = "leader"
-    new.is_elder = False
-    new.settlement_id = state.seat.id
-    nation.leader_id = new.id
-    nation.leading_family = new.family_name
-    if new.is_player:
-        return "[b]The people have turned to you to lead them.[/b]"
-    return f"The people now look to {new.full_name} to lead them."
+        new = create_character(state, "keeper", state.seat.id, state.year - 35)
+    make_leader(state, new)
+    return _turned_to(new)
+
+
+def leadership_year(state):
+    """While a leader lives, they may give way: grown old or frail, or outshone by
+    someone the people now look to more. Returns a log line or ''."""
+    leader = state.leader
+    if leader is None or not leader.alive:
+        return ""
+    rng = state.rng()
+    nation = state.nation
+    frail = leader.age(state.year) >= STEP_ASIDE_AGE or leader.health < FRAIL_HEALTH
+    if frail and rng.random() < STEP_ASIDE_CHANCE:
+        new = next_leader(state, leader, rng)
+        if new is None:
+            return ""
+        make_leader(state, new)
+        leader.is_elder = True
+        who = "You have" if leader.is_player else f"{leader.full_name} has"
+        return f"{who} grown too old to lead and given way. " + _turned_to(new)
+    if nation.succession == "lineage":
+        return ""
+    rival = next_leader(state, leader)
+    if rival is None or rival.age(state.year) < LEADER_AGE:
+        return ""
+    if standing(rival) > TURN_MARGIN * standing(leader) + TURN_LEAD and rng.random() < TURN_CHANCE:
+        make_leader(state, rival)
+        who = "you" if leader.is_player else leader.full_name
+        return f"The people no longer look to {who} as they did. " + _turned_to(rival)
+    return ""
 
 
 def ensure_elders(state):

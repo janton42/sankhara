@@ -16,7 +16,7 @@ START_CHANCE = 0.35  # an idle ordinary NPC taking something on, per year
 DEED_REGARD = 1.0
 JOIN_WEIGHT = 1.5  # helping with what is under way comes more naturally than beginning anew
 LEAVE_CHANCE = 0.12
-ELDER_REGARD = 4.0
+ELDER_REGARD = 2.0
 
 
 def _crowded(state):

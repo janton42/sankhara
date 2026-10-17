@@ -14,7 +14,14 @@ from dataclasses import dataclass, field
 
 from sankhara.sim import discoveries, tendencies
 from sankhara.sim.nation import adjust_settlements, advance, clamp, land_richness, people_scale
-from sankhara.sim.people import family_of
+from sankhara.sim.people import (
+    FRAIL_HEALTH,
+    LEADER_AGE,
+    STEP_ASIDE_AGE,
+    family_of,
+    make_leader,
+    standing,
+)
 from sankhara.sim.stations import ADULT_AGE
 
 
@@ -186,6 +193,25 @@ def _shame_idler(ctx):
         heal(who, -3)
         return f"{who.name} was shamed before everyone. Some laughed."
     return "There was no one to make an example of."
+
+
+def _stand_forward(ctx):
+    """Ask the people to follow you. They might, if they already look to you more than
+    to the one who leads them, or that one is failing."""
+    state, me = ctx.state, ctx.char
+    leader = state.leader
+    failing = leader is None or (
+        leader.age(state.year) >= STEP_ASIDE_AGE or leader.health < FRAIL_HEALTH
+    )
+    ratio = standing(me) / max(1.0, standing(leader) if leader else 1.0)
+    chance = min(0.85, 0.05 + 0.6 * max(0.0, ratio - 0.8) + (0.3 if failing else 0.0))
+    if ctx.rng.random() < chance:
+        make_leader(state, me)
+        return "You stood before the people and asked them to follow you, and they did."
+    me.means.set("regard", me.means.get("regard") * 0.8)
+    if leader:
+        leader.adjust_affinity(me.id, -0.3)
+    return "You stood before the people and asked them to follow you. Few did."
 
 
 def _teach_child(ctx):
@@ -424,6 +450,15 @@ def _hunt_beast(ctx):
     return "You went out after the beast."
 
 
+def _could_lead(state, char):
+    return (
+        char.station != "leader"
+        and char.age(state.year) >= LEADER_AGE
+        and char.means.get("regard") >= 25
+        and state.nation.succession != "lineage"
+    )
+
+
 def _has_family(state, char):
     return bool(family_of(state, char))
 
@@ -452,6 +487,17 @@ ACTION_LIST = [
         _care_family,
         {"hands": 2},
         requires=_has_family,
+    ),
+    Action(
+        "stand_forward",
+        "Ask the people to follow you",
+        "Stand up at the gathering and offer to lead. Not everyone will thank you for it.",
+        (),
+        ("ambitious",),
+        -0.01,
+        _stand_forward,
+        {"regard": 3},
+        requires=_could_lead,
     ),
     Action(
         "rest",
