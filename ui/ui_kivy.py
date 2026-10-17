@@ -7,9 +7,10 @@ from kivy.app import App
 from entities.player import Player
 from entities.player_state import PlayerState
 from entities.lineage import Family
-from ui.screens.info_panel import format_tile_info
+from ui.screens.info_panel import format_tile_info, format_player_info
 from constants.config import ACTIONS
 from core.turn_manager import regenerate_resources, process_player_actions
+
 
 class InfoPanel(BoxLayout):
     def __init__(self, **kwargs):
@@ -34,7 +35,7 @@ class InfoPanel(BoxLayout):
         for i in range(4):
             vbox = BoxLayout(orientation='vertical', size_hint_x=1, spacing=0)
             dropdown = DropDown()
-            main_button = Button(text=f"Action {i+1}", size_hint_y=None, height=35, disabled=True)
+            main_button = Button(text=f"Action {i + 1}", size_hint_y=None, height=35, disabled=True)
             self.populate_dropdown(dropdown, main_button, i)
             main_button.bind(on_release=dropdown.open)
             vbox.add_widget(main_button)
@@ -74,7 +75,7 @@ class InfoPanel(BoxLayout):
         self.player = Player(player_id="p1", family=family, state=state)
         self.player.set_player_gender()
         self.player.set_player_name()
-        self.player_label.text = self.format_player_info()
+        self.player_label.text = format_player_info(self)
         self.start_button.text = "Take Action"
         self.start_button.unbind(on_press=self.on_start_game_wrapper)
         self.start_button.bind(on_press=self.on_take_action)
@@ -100,7 +101,8 @@ class InfoPanel(BoxLayout):
             remaining = 24 - total_hours
             self.populate_dropdown(dropdown, main_button, i)
             # Disable if no actions fit
-            has_valid = any(action['hours'] <= remaining for action in ACTIONS if (action['repeatable'] or action['id'] not in [a['id'] for a in self.selected_actions if a]))
+            has_valid = any(action['hours'] <= remaining for action in ACTIONS if
+                            (action['repeatable'] or action['id'] not in [a['id'] for a in self.selected_actions if a]))
             main_button.disabled = not has_valid or remaining <= 0
         # If any selected action puts us over 24, disable all others
         if total_hours > 24:
@@ -120,28 +122,17 @@ class InfoPanel(BoxLayout):
             process_player_actions(self.player, actions_taken)
         for i, (main_button, dropdown, label) in enumerate(self.action_dropdowns):
             label.text = main_button.text
-            main_button.text = f"Action {i+1}"
+            main_button.text = f"Action {i + 1}"
             main_button.disabled = False
             self.selected_actions[i] = None
             self.populate_dropdown(dropdown, main_button, i)
         self.update_dropdown_states()
         # Always update player info after actions
-        self.player_label.text = self.format_player_info()
+        self.player_label.text = format_player_info(self)
         if self.player and self.player.state.health <= 0:
             app = App.get_running_app()
             if hasattr(app, 'game_over'):
                 app.game_over()
 
-    def format_player_info(self):
-        if not self.player:
-            return "Player: Not started"
-        s = self.player.state
-        return (f"Player: {self.player.name}\n"
-                f"Species: {s.species}  Age: {s.age}\n"
-                f"Health: {s.health}    Happiness: {s.happiness}\n"
-                f"Family: {self.player.family.name} Karma: {self.player.karma}\n"
-                )
-
     def update_tile_info(self, tile):
         self.tile_label.text = format_tile_info(tile)
-

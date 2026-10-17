@@ -17,9 +17,9 @@ class Family:
 
     def set_family_name(self):
         if self.lineage_type == 'matrilineal':
-            self.name = self.mother.split(' ')[0]
+            self.name = self.mother.split(' ')[1]
         elif self.lineage_type == 'patrilineal':
-            self.name = self.father.split(' ')[0]
+            self.name = self.father.split(' ')[1]
 
     def add_member(self, member_id: str):
         if member_id not in self.members:
