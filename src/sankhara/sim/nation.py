@@ -16,7 +16,15 @@ SHARE_OF_SURPLUS = 0.3  # how much of a good year's surplus goes to the common s
 STORES_SPOILAGE = 0.35  # how much of the common stores rots each year, before food keeping
 MIN_SPOILAGE = 0.05
 HANDS_BASE = 25  # labour the people can spare in common each year, at 250 people
-WORK_CAPS = {"gathering": 1, "pits": 2, "fields": 3, "weir": 2, "herd": 3, "sacred": 1}
+WORK_CAPS = {
+    "gathering": 1,
+    "pits": 2,
+    "fields": 3,
+    "weir": 2,
+    "herd": 3,
+    "sacred": 1,
+    "paths": 1,
+}
 GROWTH = 0.02
 
 
@@ -79,6 +87,9 @@ def economy_year(state):
     share = min(0.8, SHARE_OF_SURPLUS + fx.get("stores_share", 0))
     # the more people, the harder it is to hold them together
     size_strain = 6 * math.log2(max(1.0, state.total_population() / 300))
+    paths = (
+        3 if state.seat.works.get("paths") else 0
+    )  # camps that can reach each other hold together
 
     for s in state.settlements.values():
         cap = capacity(state, s, fx)
@@ -123,13 +134,14 @@ def economy_year(state):
             + fx.get("cohesion", 0)
             + 6 * s.works.get("gathering", 0)
             + 4 * s.works.get("sacred", 0)
+            + paths
             + (s.plenty - 45) * 0.15
             + nation.lore / 20
             - crowding
             - size_strain
         )
         s.cohesion = clamp(s.cohesion + 0.15 * (target_cohesion - s.cohesion))
-        target_plenty = 45 + 25 * surplus_ratio + fx.get("plenty", 0)
+        target_plenty = 45 + 25 * surplus_ratio + fx.get("plenty", 0) + paths
         s.plenty = clamp(s.plenty + 0.15 * (target_plenty - s.plenty))
         if fx.get("settled") and s.kind == "camp":
             s.kind = "village"

@@ -156,8 +156,9 @@ def die(state, char, cause):
     spouse = state.character(char.spouse_id)
     if spouse and spouse.alive:
         spouse.spouse_id = None
+    # their own undertakings end with them; the people's works pass on (game._world_year)
     for project in state.projects_of(char.id):
-        if not char.is_player:
+        if not char.is_player and not project.common:
             del state.projects[str(project.id)]
 
 

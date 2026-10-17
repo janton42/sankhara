@@ -91,3 +91,16 @@ interrupts.
 Much of the development mechanism should be like Civilization, which is an excellent game,
 but there's way too much of a focus on combat. The development mechanisms, though, are
 very good and should be thought of as a guide for Sankhara.
+
+
+## Feedback 2
+Desicions at all levels of society that are under control of any station should show a clear,
+connected influence over the direction of society. The mechanics of the UI are generally okay,
+but the individual is taking too much focus over building the nation. The odds of becoming a leader
+are very small, so most of the game will likely be played as a farmer, which isn't quite
+the intent. I understand how mathematically there is simply a higher chance of
+being a farmer than a leader, since there are more farmers than leaders, but the game
+has to allow for players to lead from wherever they are. For example, the projects started in
+the first round when the player is the leader should still be relevant to the next character,
+like they can work on the project to build roads that the leader started, or something like
+that. The "a life begins" is a good place to keep that thread going.
