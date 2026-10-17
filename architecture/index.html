@@ -603,6 +603,14 @@ game starts with a small band rather than a kingdom; this is how that is built:<
 <td><code>stations.ACTION_SLOTS = 3</code>. A slot holds a one-year deed (<code>actions.py</code>), an answer to an obligation, or a multi-year project (<code>projects.py</code>).</td>
 </tr>
 <tr>
+<td>Lead from wherever you are</td>
+<td>Most projects are <strong>the people's works</strong> (<code>Project.common</code>). Anyone can begin one with their own means (at half cost; slower), help with one someone else leads (each helper adds work), take up one left unfinished, or call others to it (<code>rally</code>: spends standing to add support, which adds work and draws NPC helpers). NPCs join works more readily when the one leading is respected or liked. When a leader dies or sets a work aside it passes to a helper, the people's leader or an elder (<code>projects.pass_on</code>), or waits for someone. A custom being settled lets anyone speak for a form; a respected voice weighs more (<code>game.choose_form</code>, <code>pending_mode</code>).</td>
+</tr>
+<tr>
+<td>The thread between lives</td>
+<td>Works an earlier character of the player's worked on stay in play: the birth screen lists what was finished while the new character grew up and what is still unfinished and who carries it (<code>game.thread_lines</code>), and the chooser marks those works. <code>GameState.legacy</code> remembers finished works and settled customs the player had a hand in; the end-of-life screen shows them.</td>
+</tr>
+<tr>
 <td>Multi-year projects, run until interrupted</td>
 <td>A <code>Project</code> keeps its slot year after year until finished, set aside or stalled. Its cost, tags and karma count every year it is worked. <code>YearReport.interrupts</code> lists what should stop "Let the years pass": an obligation, a finished or stalled project, a discovery, a choice to make, strangers, a death or birth in the family, a life ending.</td>
 </tr>
