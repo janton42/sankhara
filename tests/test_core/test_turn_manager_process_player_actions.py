@@ -55,3 +55,24 @@ def test_process_player_actions_clamp():
     turn_manager.process_player_actions(player, actions_taken)
     assert player.karma >= -1
     assert player.state.health >= 0
+
+
+def test_process_player_actions_returns_effects():
+    player = MockPlayer(karma=0.0, health=50.0)
+    effects = turn_manager.process_player_actions(player, ["sleep", "meditate", "meditate"])
+    by_name = {e["name"]: e for e in effects}
+    assert by_name["Sleep"] == {
+        "name": "Sleep",
+        "count": 1,
+        "health": 10,
+        "karma": 0.1,
+        "skipped": False,
+    }
+    # repeatable actions apply once per occurrence
+    assert by_name["Meditate"]["count"] == 2
+    assert by_name["Meditate"]["health"] == 4
+    # skippable actions not taken are reported as skipped penalties
+    assert by_name["Eat and Drink"]["skipped"] is True
+    assert by_name["Eat and Drink"]["health"] == -8
+    # non-skippable actions not taken are not reported
+    assert "Gather Resources" not in by_name

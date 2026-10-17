@@ -1,97 +1,105 @@
-from kivy.graphics import Color, Line
-from kivy.uix.screenmanager import Screen
+from kivy.graphics import Color, Ellipse, Line, Mesh
 from kivy.uix.widget import Widget
 
-from sankhara.constants.config import (
-    BIOME_COLORS,
-    HEX_EDGE_LENGTH,
-    HEX_HEIGHT,
-    HEX_HORIZONTAL_SPACING,
-    HEX_ORIENTATION,
-    HEX_VERTICAL_SPACING,
-    HEX_WIDTH,
-    MAP_HEIGHT,
-    MAP_WIDTH,
-)
+from sankhara.constants.config import MAP_HEIGHT, MAP_WIDTH
+from sankhara.ui.theme import ACCENT, TEXT, biome_color
+from sankhara.world import hexgrid
+
+MAP_PADDING = 8
 
 
-class MapScreen(Screen):
+class MapScreen(Widget):
+    """Draws the hex map scaled to fit the widget, row 0 at the top."""
+
     def __init__(self, on_tile_selected_callback=None, **kwargs):
         super().__init__(**kwargs)
         self.map_data = None  # Will be set externally
-        self.canvas_widget = Widget()
-        self.add_widget(self.canvas_widget)
-        self.canvas_widget.bind(on_touch_down=self.on_map_touch)
         self.on_tile_selected_callback = on_tile_selected_callback
+        self.selected_tile = None
+        self.home_tile = None
+        self.hex_size = 0
+        self.origin = (0, 0)  # top-left of the map's bounding box, in window coords
+        self.bind(pos=self.draw_map, size=self.draw_map)
 
-    def draw_map(self):
+    def set_map(self, map_data):
+        self.map_data = map_data
+        self.selected_tile = None
+        self.home_tile = None
+        self.draw_map()
+
+    def set_home(self, tile):
+        self.home_tile = tile
+        self.draw_map()
+
+    def _layout(self):
+        """Fit the map inside the widget and centre it."""
+        avail_w = max(0, self.width - 2 * MAP_PADDING)
+        avail_h = max(0, self.height - 2 * MAP_PADDING)
+        self.hex_size = hexgrid.fit_size(MAP_WIDTH, MAP_HEIGHT, avail_w, avail_h)
+        map_w, map_h = hexgrid.map_pixel_size(MAP_WIDTH, MAP_HEIGHT, self.hex_size)
+        self.origin = (self.center_x - map_w / 2, self.center_y + map_h / 2)
+
+    def to_screen(self, x, y):
+        """Map-space point (y down) to window coordinates (y up)."""
+        return self.origin[0] + x, self.origin[1] - y
+
+    def tile_screen_center(self, tile):
+        return self.to_screen(*hexgrid.tile_center(tile["q"], tile["r"], self.hex_size))
+
+    def draw_map(self, *_):
+        self.canvas.clear()
         if self.map_data is None:
             return
-        self.canvas_widget.canvas.clear()
-        with self.canvas_widget.canvas:
-            for q, col in enumerate(self.map_data):
-                for r, tile in enumerate(col):
-                    x, y = self.get_tile_position(q, r)
-                    biome = tile.get("biome", "")
-                    color = BIOME_COLORS.get(biome, (1, 1, 1, 1))
-                    self.draw_hex(x, y, color)
-                    # abbr = tile.get("abbr", "")
-                    # if abbr:
-                    #     label = CoreLabel(text=abbr, font_size=12)
-                    #     label.refresh()
-                    #     texture = label.texture
-                    #     Rectangle(
-                    #         texture=texture,
-                    #         pos=(x - texture.size[0] / 2, y - texture.size[1] / 2),
-                    #         size=texture.size
-                    #     )
+        self._layout()
+        size = self.hex_size
+        with self.canvas:
+            for col in self.map_data:
+                for tile in col:
+                    cx, cy = self.tile_screen_center(tile)
+                    corners = hexgrid.hex_corners(cx, cy, size)
+                    fill = biome_color(tile.get("biome", ""))
+                    Color(*fill)
+                    self._fill_hex(cx, cy, corners)
+                    Color(fill[0] * 0.6, fill[1] * 0.6, fill[2] * 0.6, 1)
+                    Line(points=corners, close=True, width=1)
+            if self.home_tile:
+                cx, cy = self.tile_screen_center(self.home_tile)
+                dot = size * 0.45
+                Color(*TEXT)
+                Ellipse(pos=(cx - dot / 2, cy - dot / 2), size=(dot, dot))
+                Color(*ACCENT)
+                Line(circle=(cx, cy, dot / 2), width=1.5)
+            if self.selected_tile:
+                cx, cy = self.tile_screen_center(self.selected_tile)
+                Color(*ACCENT)
+                Line(points=hexgrid.hex_corners(cx, cy, size * 0.92), close=True, width=2)
 
-    def draw_hex(self, x, y, color):
-        Color(*color)
-        Line(points=self.hex_points(x, y), width=1)
+    @staticmethod
+    def _fill_hex(cx, cy, corners):
+        vertices = [cx, cy, 0, 0]
+        for i in range(0, 12, 2):
+            vertices += [corners[i], corners[i + 1], 0, 0]
+        vertices += [corners[0], corners[1], 0, 0]
+        Mesh(vertices=vertices, indices=list(range(8)), mode="triangle_fan")
 
-    def get_tile_position(self, q, r):
-        if HEX_ORIENTATION == "pointy":
-            x = q * HEX_HORIZONTAL_SPACING
-            y = r * HEX_VERTICAL_SPACING + (q % 2) * (HEX_VERTICAL_SPACING / 2)
-        else:
-            x = q * HEX_WIDTH
-            y = r * HEX_HEIGHT * 0.75
-        return x, y
-
-    def hex_points(self, x, y):
-        from math import cos, pi, sin
-
-        angle_offset = pi / 6 if HEX_ORIENTATION == "pointy" else 0
-        points = []
-        for i in range(6):
-            angle = 2 * pi * i / 6 + angle_offset
-            points.append(x + HEX_EDGE_LENGTH * cos(angle))
-            points.append(y + HEX_EDGE_LENGTH * sin(angle))
-        return points + points[:2]
-
-    def get_center_hex_pixel_pos(self):
-        center_q = MAP_WIDTH // 2
-        center_r = MAP_HEIGHT // 2
-        return self.get_tile_position(center_q, center_r)
-
-    def on_map_touch(self, widget, touch):
-        # Convert touch coordinates to tile indices (q, r)
-        q, r = self.pixel_to_hex(touch.x, touch.y)
-        if 0 <= q < MAP_WIDTH and 0 <= r < MAP_HEIGHT:
-            tile = self.map_data[q][r]
-            self.on_tile_selected(tile)
-
-    def pixel_to_hex(self, x, y):
-        # Only works for pointy-top hexes
-        # Approximate conversion from pixel to axial coordinates
-        q = int(round(x / HEX_HORIZONTAL_SPACING))
-        r = int(round((y - (q % 2) * (HEX_VERTICAL_SPACING / 2)) / HEX_VERTICAL_SPACING))
-        return q, r
+    def on_touch_down(self, touch):
+        if not self.collide_point(*touch.pos) or self.map_data is None:
+            return super().on_touch_down(touch)
+        cell = hexgrid.pixel_to_tile(
+            touch.x - self.origin[0],
+            self.origin[1] - touch.y,
+            self.hex_size,
+            MAP_WIDTH,
+            MAP_HEIGHT,
+        )
+        if cell is None:
+            return super().on_touch_down(touch)
+        col, row = cell
+        self.on_tile_selected(self.map_data[col][row])
+        return True
 
     def on_tile_selected(self, tile):
-        # Call the callback if provided
+        self.selected_tile = tile
+        self.draw_map()
         if self.on_tile_selected_callback:
             self.on_tile_selected_callback(tile)
-        else:
-            print(f"Tile selected: {tile}")

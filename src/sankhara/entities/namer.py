@@ -19,4 +19,4 @@ def make_name(elevation, gender):
         random.sample(CULTURE_GROUPS[elevation]["last_stems"], 1)[0]
         + random.sample(CULTURE_GROUPS[elevation]["last_suffixes"], 1)[0].split("-")[1]
     )
-    return f"{first_name} {last_name}"
+    return f"{first_name.capitalize()} {last_name.capitalize()}"

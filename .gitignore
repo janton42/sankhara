@@ -150,3 +150,5 @@ cloud-sql-proxy
 # Tooling
 .ruff_cache/
 site/
+*.swp
+*.swo
