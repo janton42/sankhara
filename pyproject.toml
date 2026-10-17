@@ -24,7 +24,7 @@ dev = [
     "ruff>=0.12",
 ]
 docs = [
-    "mkdocs>=1.6",
+    "mkdocs>=1.6,<2",  # MkDocs 2.0 drops theme/plugin support Material relies on
     "mkdocs-material>=9.6",
 ]
 

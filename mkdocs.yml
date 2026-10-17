@@ -1,0 +1,28 @@
+site_name: Sankhara
+site_description: A turn-based hex-map world game built around Buddhist concepts.
+repo_url: https://github.com/janton42/sankhara
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+nav:
+  - Home: index.md
+  - Concepts: concepts.md
+  - Architecture: architecture.md
+  - Development: development.md
+
+markdown_extensions:
+  - admonition
+  - toc:
+      permalink: true
