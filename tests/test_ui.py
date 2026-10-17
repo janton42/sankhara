@@ -64,7 +64,7 @@ def test_chooser_lists_every_option():
     text = all_text(popup.content)
     for opt in game.options(view.state):
         assert opt.name in text
-    assert "Take on something lasting" in text
+    assert "Begin something for the people" in text
 
 
 def test_hidden_ideas_never_appear_on_screen():
@@ -135,3 +135,28 @@ def test_words():
     assert words.food_word(50, 1000) == "plenty"
     assert words.population_text(3200) == "3.2k"
     assert words.years_text(3, about=True) == "about 3 years"
+
+
+def test_the_peoples_works_are_shown_beside_the_map():
+    view, _ = make_view()
+    state = view.state
+    assert "The people's works" in all_text(view)
+    from sankhara.sim import projects
+
+    leader = state.leader
+    option = next(o for o in projects.options_for(state, leader) if o.definition.common)
+    projects.start(state, leader, option)
+    view.refresh()
+    assert option.name in view.works_label.text
+
+
+def test_speaking_for_a_custom_when_not_deciding():
+    view, _ = make_view()
+    state = view.state
+    state.pending_choice = "gifts"
+    state.pending_mode = "voice"
+    view.refresh()
+    text = all_text(view.choice_popup.content)
+    assert "Speak for" in text
+    view.choice_popup._choose("feasts")
+    assert "gifts" in state.nation.known

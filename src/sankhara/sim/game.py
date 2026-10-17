@@ -3,7 +3,7 @@ the current character; when a life ends, the next begins somewhere else among th
 same people.
 
 The UI only talks to this module: `new_game`, `options`, `choose`, `affordable`,
-`remaining_budget`, `end_year`, `choose_form` and `begin_next_life`.
+`remaining_budget`, `end_year`, `choose_form`, `begin_next_life` and `threads`.
 """
 
 import math
@@ -151,8 +151,9 @@ def new_game(seed=None):
 class Option:
     """Something the player could give a slot of attention to this year."""
 
-    key: str  # plan entry: "event:<i>", "p:<project id>", "new:<kind>:<target>" or a deed id
-    kind: str  # "obligation", "continue", "project" or "deed"
+    key: str  # plan entry: "event:<i>", "p:<id>", "join:<id>", "rally:<id>", "new:<kind>:<target>"
+    # or a deed id
+    kind: str  # "obligation", "continue", "join", "rally", "project", "personal" or "deed"
     name: str
     text: str
     cost: dict  # per year
@@ -162,8 +163,9 @@ class Option:
     years: int = 1
     blurb: str = ""
     action: object = None
-    project: object = None  # a ProjectOption (new) or Project (continue)
+    project: object = None  # a ProjectOption (new) or Project (continue, join, rally)
     event_index: int | None = None
+    thread: bool = False  # something an earlier life of the player's worked on
 
 
 @dataclass
@@ -182,9 +184,38 @@ def _new_key(option):
     return f"new:{option.definition.id}:{option.target or ''}"
 
 
+def _pull(player, tags):
+    return tendencies.affinity(player.tendencies, tags)
+
+
+def _project_text(state, project):
+    leader = state.character(project.leader_id)
+    helpers = len(project.helpers)
+    who = (
+        f"led by {leader.full_name}"
+        if leader
+        else f"begun by {project.started_by}, left unfinished"
+    )
+    if leader and project.started_by != leader.full_name:
+        who += f", begun by {project.started_by}"
+    if helpers:
+        who += f", {helpers} helping"
+    return f"{who}  ·  {projects.progress_word(projects.progress(state, project))}"
+
+
+def committed(state):
+    """The projects the player is working on, led or helped, with their slots."""
+    out = []
+    for pid, slot in state.commitments.items():
+        project = state.projects.get(pid)
+        if project and state.player_id in (project.leader_id, *project.helpers):
+            out.append((slot, project))
+    return sorted(out, key=lambda x: x[0])
+
+
 def options(state):
-    """Everything the player can choose this year: what's expected first, then what they're
-    already doing, then new undertakings and this year's deeds, by inclination."""
+    """Everything the player can choose this year: what's expected, what they're already doing,
+    the people's works they could join, new undertakings, and this year's deeds."""
     player = state.player
     out = []
     for i, event in enumerate(state.events):
@@ -197,7 +228,7 @@ def options(state):
                     action.name,
                     action.text,
                     effective_cost(state, player, action),
-                    tendencies.affinity(player.tendencies, action.tags),
+                    _pull(player, action.tags),
                     action.tags,
                     _scope(state, player, action),
                     blurb=event.text,
@@ -205,37 +236,81 @@ def options(state):
                     event_index=i,
                 )
             )
-    for project in sorted(state.projects_of(player.id), key=lambda p: p.slot):
+    mine = committed(state)
+    for _, project in mine:
         d = projects.PROJECTS[project.kind]
+        leading = project.leader_id == player.id
         out.append(
             Option(
                 f"p:{project.id}",
                 "continue",
                 projects.display_name(state, project),
-                d.text,
-                projects.yearly_cost(state, project),
-                tendencies.affinity(player.tendencies, d.tags),
+                d.text if leading else _project_text(state, project),
+                projects.yearly_cost(state, project)
+                if leading
+                else projects.help_cost(state, player, project),
+                _pull(player, d.tags),
                 d.tags,
-                _scope(state, player, d),
-                years=max(1, project.years_needed - project.years_done),
+                _scope(state, player, d) if leading else "own",
+                years=projects.years_left(state, project),
                 project=project,
             )
         )
-    new = [
-        Option(
-            _new_key(o),
-            "project",
-            o.name,
-            o.definition.text,
-            o.cost,
-            tendencies.affinity(player.tendencies, o.definition.tags),
-            o.definition.tags,
-            _scope(state, player, o.definition),
-            years=o.years,
-            project=o,
+    joins = []
+    for project in projects.joinable(state, player):
+        d = projects.PROJECTS[project.kind]
+        taking_up = project.leader_id is None
+        joins.append(
+            Option(
+                f"join:{project.id}",
+                "join",
+                ("Take up: " if taking_up else "Help with: ")
+                + projects.display_name(state, project),
+                _project_text(state, project),
+                effective_cost(state, player, d)
+                if taking_up
+                else projects.help_cost(state, player, project),
+                _pull(player, d.tags),
+                d.tags,
+                _scope(state, player, d) if taking_up else "own",
+                years=projects.years_left(state, project),
+                project=project,
+                thread=bool(project.worked_by),
+            )
         )
-        for o in projects.options_for(state, player)
+    joins.sort(key=lambda o: (not o.thread, -o.pull))
+    rallies = [
+        Option(
+            f"rally:{project.id}",
+            "rally",
+            f"Call others to {_lower_first(projects.display_name(state, project))}",
+            "Go from fire to fire asking people to lend a hand this year and next.",
+            projects.rally_cost(state, player),
+            _pull(player, projects.RALLY_TAGS),
+            projects.RALLY_TAGS,
+            "own",
+            project=project,
+        )
+        for _, project in mine
+        if project.common
     ]
+    new, personal = [], []
+    for o in projects.options_for(state, player):
+        d = o.definition
+        (new if d.common else personal).append(
+            Option(
+                _new_key(o),
+                "project" if d.common else "personal",
+                o.name,
+                d.text,
+                o.cost,
+                _pull(player, d.tags),
+                d.tags,
+                _scope(state, player, d),
+                years=o.years,
+                project=o,
+            )
+        )
     obligated = {o.action.id for o in out if o.action}
     deeds = [
         Option(
@@ -244,7 +319,7 @@ def options(state):
             a.name,
             a.text,
             effective_cost(state, player, a),
-            tendencies.affinity(player.tendencies, a.tags),
+            _pull(player, a.tags),
             a.tags,
             _scope(state, player, a),
             action=a,
@@ -253,8 +328,9 @@ def options(state):
         if a.id not in obligated
     ]
     new.sort(key=lambda o: -o.pull)
+    personal.sort(key=lambda o: -o.pull)
     deeds.sort(key=lambda o: -o.pull)
-    return out + new + deeds
+    return out + joins + rallies + new + personal + deeds
 
 
 def option_for(state, key):
@@ -297,26 +373,48 @@ def begin_year(state):
     state.modifiers = {}
     state.events = generate_events(state, state.player)
     state.plan = [None] * ACTION_SLOTS
-    for project in sorted(state.projects_of(state.player_id), key=lambda p: p.slot):
-        slot = project.slot if state.plan[project.slot] is None else state.plan.index(None)
-        project.slot = slot
+    held = committed(state)
+    state.commitments = {}
+    for slot, project in held:
+        slot = slot if state.plan[slot] is None else state.plan.index(None)
+        state.commitments[str(project.id)] = slot
         state.plan[slot] = f"p:{project.id}"
     # habit fills empty slots with what this character is drawn to
     state.defaults = []
     for opt in options(state):
         if None not in state.plan:
             break
-        if opt.kind in ("obligation", "continue") or opt.pull < tendencies.DEFAULT_THRESHOLD:
+        if (
+            opt.kind in ("obligation", "continue", "rally")
+            or opt.pull < tendencies.DEFAULT_THRESHOLD
+        ):
             continue
         if choose(state, state.plan.index(None), opt.key):
             state.defaults.append(opt.key)
 
 
-def _tags_for_key(key):
+def _tags_for_key(state, key):
     if key.startswith("new:"):
         return projects.PROJECTS[key.split(":")[1]].tags
+    if key.startswith("join:"):
+        project = state.projects.get(key.split(":")[1])
+        return projects.PROJECTS[project.kind].tags if project else ()
     action = ACTIONS.get(key)
     return action.tags if action else ()
+
+
+def _work_player_project(state, project, lines, interrupts, rng):
+    """The player leads this project: a year's work. Returns the karma it carries."""
+    name = projects.display_name(state, project)
+    line, outcome = projects.work_year(state, project, rng)
+    if line:
+        lines.append(line)
+    if outcome == "stalled":
+        interrupts.append(f"Stalled for want of means: {name}.")
+        return 0.0
+    if outcome == "done":
+        interrupts.append(f"Finished: {name}.")
+    return projects.PROJECTS[project.kind].karma
 
 
 def end_year(state):
@@ -328,7 +426,7 @@ def end_year(state):
     karma = 0.0
 
     chosen = [(slot, option_for(state, key)) for slot, key in enumerate(state.plan) if key]
-    worked = set()
+    kept = set()
     for slot, opt in chosen:
         if opt is None:
             continue
@@ -340,32 +438,40 @@ def end_year(state):
             karma += opt.action.karma
             tendencies.strengthen(player.tendencies, opt.tags)
             continue
-        if opt.kind == "project":
-            project = projects.start(state, player, opt.project, slot)
+        if opt.kind == "rally":
+            player.means.spend(opt.cost)
+            lines.append(projects.rally(state, player, opt.project))
+            tendencies.strengthen(player.tendencies, opt.tags)
+            continue
+        if opt.kind in ("project", "personal"):
+            project = projects.start(state, player, opt.project)
             lines.append(f"You took on something new: {_lower_first(opt.name)}.")
+        elif opt.kind == "join":
+            project = opt.project
+            lines.append(projects.join(state, player, project))
         else:
             project = opt.project
-        worked.add(project.id)
-        name = projects.display_name(state, project)
-        line, outcome = projects.work_year(state, project, rng)
-        if outcome != "stalled":
-            karma += projects.PROJECTS[project.kind].karma
-            tendencies.strengthen(player.tendencies, opt.tags)
-        if line:
-            lines.append(line)
-        if outcome == "done":
-            interrupts.append(f"Finished: {name}.")
-        elif outcome == "stalled":
-            interrupts.append(f"Stalled for want of means: {name}.")
-    for project in state.projects_of(player.id):
-        if project.id not in worked:
-            projects.abandon(state, project)
-            tendencies.weaken(player.tendencies, projects.PROJECTS[project.kind].tags)
-            name = _lower_first(projects.display_name(state, project))
-            lines.append(f"You set aside: {name}.")
+        state.commitments[str(project.id)] = slot
+        kept.add(str(project.id))
+        tendencies.strengthen(player.tendencies, opt.tags)
+        if project.leader_id == player.id:
+            karma += _work_player_project(state, project, lines, interrupts, rng)
+        else:
+            karma += projects.PROJECTS[project.kind].karma  # worked by its leader, with you
+    for pid in [p for p in state.commitments if p not in kept]:
+        project = state.projects.get(pid)
+        del state.commitments[pid]
+        if project is None:
+            continue
+        tendencies.weaken(player.tendencies, projects.PROJECTS[project.kind].tags)
+        name = _lower_first(projects.display_name(state, project))
+        lines.append(f"You set aside {name}.")
+        note = projects.leave(state, player, project)
+        if note:
+            lines.append(note)
     for key in state.defaults:
         if key not in state.plan:
-            tendencies.weaken(player.tendencies, _tags_for_key(key))
+            tendencies.weaken(player.tendencies, _tags_for_key(state, key))
 
     notes, obligation_karma = resolve_events(state, state.plan)
     lines += notes
@@ -376,6 +482,7 @@ def end_year(state):
         # nobody chose, so the people's own leanings decide
         lines.append(_learn(state, state.pending_choice, None, rng))
         state.pending_choice = None
+        state.pending_mode = ""
 
     was_leader = player.station == "leader"
     _world_year(state, (), lines, interrupts)
@@ -384,7 +491,7 @@ def end_year(state):
 
     cause = age_and_health(state, player, rng)
     if cause:
-        _end_life(state, cause)
+        _end_life(state, cause, lines)
         report.life_ended = True
         lines.append(f"[b]{player.full_name} died of {cause}, aged {player.age(state.year)}.[/b]")
         note = succeed(state)
@@ -402,8 +509,11 @@ def end_year(state):
         if any(e.obligation for e in state.events):
             interrupts.append("Something is expected of you.")
         if state.pending_choice:
-            name = discoveries.DISCOVERIES[state.pending_choice].name
-            interrupts.append(f"A choice must be made: {name.lower()}.")
+            name = discoveries.DISCOVERIES[state.pending_choice].name.lower()
+            if state.pending_mode == "decide":
+                interrupts.append(f"A choice must be made: {name}.")
+            else:
+                interrupts.append(f"The people are deciding: {name}.")
     return report
 
 
@@ -423,7 +533,7 @@ def _world_year(state, protect, lines, interrupts):
     lines += economy_year(state)
     lines += households_year(state)
     discoveries.yearly_insight(state, rng)
-    _settle_discoveries(state, lines, interrupts, rng)
+    _settle_discoveries(state, lines, interrupts, rng, protect)
     notes, met = neighbours_year(state, rng)
     lines += notes
     interrupts += met
@@ -431,6 +541,11 @@ def _world_year(state, protect, lines, interrupts):
     note = succeed(state)
     if note:
         lines.append(note)
+    _orphaned_works(state, lines)
+    if not protect:
+        interrupts += projects.player_notes(state)
+    else:
+        projects.player_notes(state)
 
     lost = [state.character(cid) for cid in alive_before if not state.character(cid).alive]
     if lost and not protect:
@@ -439,28 +554,51 @@ def _world_year(state, protect, lines, interrupts):
         interrupts.append("A child has been born to you.")
 
 
-def _player_led(state, did):
-    return any(p.kind == "pursue" and p.target == did for p in state.projects_of(state.player_id))
+def _orphaned_works(state, lines):
+    """The people's works whose leader has died pass to someone else."""
+    for project in list(state.projects.values()):
+        leader = state.character(project.leader_id)
+        if project.leader_id is not None and (leader is None or not leader.alive):
+            line = projects.pass_on(state, project)
+            if line and project.worked_by:
+                lines.append(line)
 
 
-def _settle_discoveries(state, lines, interrupts, rng):
-    """Ideas with enough insight become things the people know."""
+def _idea_workers(state, did):
+    """Projects working at this idea: (led by the player, helped by the player, names)."""
+    led = helped = False
+    names = []
+    for p in state.projects.values():
+        if p.kind == "pursue" and p.target == did:
+            led = led or p.leader_id == state.player_id
+            helped = helped or state.player_id in p.helpers
+            names += p.worked_by
+    return led, helped, names
+
+
+def _settle_discoveries(state, lines, interrupts, rng, protect=()):
+    """Ideas with enough insight become things the people know. A custom with several
+    possible forms is decided by the player if they worked it out or lead (and it's a
+    matter of custom); otherwise the player can speak for one, unless still a child."""
     player = state.player
     for d in discoveries.ripe(state):
-        choosing = d.forms and (
-            _player_led(state, d.id) or (player.station == "leader" and d.domain == "kin")
-        )
-        if choosing:
+        led, helped, names = _idea_workers(state, d.id)
+        if d.forms and player.id not in protect and not state.life_over:
             if state.pending_choice is None:
+                decides = led or (player.station == "leader" and d.domain == "kin")
                 state.pending_choice = d.id
-            continue
+                state.pending_mode = "decide" if decides else "voice"
+            if state.pending_choice == d.id:
+                continue
         lines.append(_learn(state, d.id, None, rng))
-        if _player_led(state, d.id) or player.station == "leader":
+        if names:
+            projects.record(state, f"The people came to understand {d.name.lower()}.", names)
+        if led or helped or player.station == "leader":
             interrupts.append(f"Something new is understood: {d.name.lower()}.")
     # whoever was working at something now known can stop
     for project in list(state.projects.values()):
         if project.kind == "pursue" and project.target in state.nation.known:
-            if project.leader_id == state.player_id:
+            if state.player_id in (project.leader_id, *project.helpers):
                 interrupts.append(f"Finished: {projects.display_name(state, project)}.")
             projects.abandon(state, project)
 
@@ -472,21 +610,47 @@ def _learn(state, did, form_id, rng):
     return "The people have come to understand " + discoveries.learn(state, did, form_id or "")
 
 
+VOICE_WEIGHT = 25  # regard at which the player's voice doubles a form's chances
+
+
 def choose_form(state, form_id):
-    """The player decides what shape a newly understood custom takes."""
+    """The player decides, or speaks for, the shape a newly understood custom takes."""
     did = state.pending_choice
     d = discoveries.DISCOVERIES[did]
     form = d.form(form_id)
     player = state.player
+    rng = state.rng()
     tendencies.strengthen(player.tendencies, form.tags)
     state.soul.karma = tendencies.clamp(
         state.soul.karma + KARMA_SCALE * FORM_KARMA * tendencies.tag_karma(form.tags)
     )
-    line = "You shaped what the people came to understand: " + discoveries.learn(
-        state, did, form_id
-    )
+    _, _, names = _idea_workers(state, did)
+    if state.pending_mode == "decide":
+        text = discoveries.learn(state, did, form_id)
+        line = "You shaped what the people came to understand: " + text
+        projects.record(
+            state, f"{d.name}: {form.name.lower()}, as you decided.", [player.full_name]
+        )
+    else:
+        voice = 1 + player.means.get("regard") / VOICE_WEIGHT
+        weights = [
+            math.exp(4 * discoveries.people_lean(state, f.tags)) * (voice if f.id == form_id else 1)
+            for f in d.forms
+        ]
+        settled = rng.choices(d.forms, weights)[0]
+        text = discoveries.learn(state, did, settled.id)
+        if settled.id == form_id:
+            line = "The people settled it as you had urged: " + text
+            projects.record(
+                state, f"{d.name}: {settled.name.lower()}, as you urged.", [player.full_name]
+            )
+        else:
+            line = f"You spoke for {form.name.lower()}, but the people settled otherwise: " + text
+    if names:
+        projects.record(state, f"The people came to understand {d.name.lower()}.", names)
     state.log.append(f"[b]Year {state.year}[/b]  {line}")
     state.pending_choice = None
+    state.pending_mode = ""
     for project in list(state.projects.values()):
         if project.kind == "pursue" and project.target == did:
             projects.abandon(state, project)
@@ -500,9 +664,16 @@ def _log(state, year, lines):
     del state.log[:-LOG_LIMIT]
 
 
-def _end_life(state, cause):
+def _end_life(state, cause, lines):
     player = state.player
     state.soul.tendencies = dict(player.tendencies)
+    for pid in list(state.commitments):
+        project = state.projects.get(pid)
+        if project is not None:
+            line = projects.leave(state, player, project)
+            if line:
+                lines.append(line)
+    state.commitments = {}
     state.soul.lives.append(
         {
             "name": player.full_name,
@@ -512,13 +683,37 @@ def _end_life(state, cause):
             "age": player.age(state.year),
             "cause": cause,
             "settlement": (state.settlement(player.settlement_id) or state.seat).name,
+            "legacy": [e["text"] for e in state.legacy if player.full_name in e["names"]],
         }
     )
-    for project in state.projects_of(player.id):
-        projects.abandon(state, project)
     state.pending_choice = None
+    state.pending_mode = ""
     die(state, player, cause)
     state.life_over = True
+
+
+def threads(state):
+    """Works earlier lives of the player's had a hand in that are still unfinished."""
+    out = []
+    for project in state.projects.values():
+        if project.worked_by and state.player_id not in (project.leader_id, *project.helpers):
+            out.append(project)
+    return out
+
+
+def thread_lines(state):
+    lines = []
+    for project in threads(state):
+        name = projects.display_name(state, project)
+        leader = state.character(project.leader_id)
+        carried = (
+            f"carried on by {leader.full_name}" if leader else "waiting for someone to take it up"
+        )
+        lines.append(
+            f"{name}, worked on by {', '.join(project.worked_by)}, is "
+            f"{projects.progress_word(projects.progress(state, project))}, {carried}."
+        )
+    return lines
 
 
 # --- the next life -----------------------------------------------------------
@@ -617,6 +812,7 @@ def begin_next_life(state):
         lines[0] = lines[0].rsplit(",", 1)[0] + ", who lead the people."
 
     # childhood passes without the player's hand
+    legacy_before = len(state.legacy)
     for _ in range(ADULT_AGE):
         state.modifiers = {}
         notable = [
@@ -641,6 +837,10 @@ def begin_next_life(state):
         f"as a {station_title(child, nation).lower()}."
     )
     state.log.append(lines[-1])
+    # the thread from before: what was finished meanwhile, and what still waits
+    for entry in state.legacy[legacy_before:]:
+        lines.append(f"While {child.name} grew up: {entry['text']}")
+    lines += [f"Still unfinished: {line}" for line in thread_lines(state)]
     begin_year(state)
     return lines
 

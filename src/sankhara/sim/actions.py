@@ -49,6 +49,9 @@ class Action:
     obligation_only: bool = False
 
 
+OWN_SHARE = 0.5
+
+
 def budget_for(state, char, action):
     if action.scope == "people" and char.station == "leader":
         return state.nation.stores
@@ -61,6 +64,8 @@ def effective_cost(state, char, item):
     mult = tendencies.cost_multiplier(char.tendencies, item.tags)
     if budget_for(state, char, item) is state.nation.stores:
         mult *= people_scale(state)
+    elif item.scope == "people":
+        mult *= OWN_SHARE  # one family beginning the people's work gives what it can
     return {k: max(1, round(v * mult)) for k, v in item.cost.items()}
 
 

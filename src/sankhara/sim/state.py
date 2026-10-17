@@ -140,16 +140,22 @@ class Neighbour:
 
 @dataclass
 class Project:
-    """Something that takes several years of someone's attention."""
+    """Something that takes years of attention. The people's works (`common`) outlive
+    whoever leads them: others can help, take them up, or call more people to them."""
 
     id: int
     kind: str
-    leader_id: int
-    years_needed: int
-    years_done: int = 0
+    leader_id: int | None  # None: left unfinished, waiting for someone to take it up
+    needed: float  # work to finish, in years of one person's attention
+    done: float = 0.0
     target: str | None = None
-    slot: int = 0  # for the player: which attention slot it occupies
+    common: bool = False
+    helpers: list[int] = field(default_factory=list)
+    support: float = 0.0  # help from people at large, raised by calling on them
     started: int = 0
+    started_by: str = ""
+    worked_by: list[str] = field(default_factory=list)  # the player's characters who worked it
+    rate: float = 1.0  # work done last year, for estimates
     stalled: bool = False
 
 
@@ -188,7 +194,10 @@ class GameState:
     plan: list[str | None] = field(default_factory=list)  # chosen option keys per slot
     defaults: list[str] = field(default_factory=list)  # what habit suggested this year
     modifiers: dict[str, float] = field(default_factory=dict)  # this year's world effects
-    pending_choice: str | None = None  # a discovery whose form the player must choose
+    pending_choice: str | None = None  # a discovery whose form is being settled
+    pending_mode: str = ""  # "decide" (the player chooses) or "voice" (the player speaks for one)
+    commitments: dict[str, int] = field(default_factory=dict)  # player's project id -> slot
+    legacy: list[dict] = field(default_factory=list)  # what the player's lives set in motion
     log: list[str] = field(default_factory=list)
     next_id: int = 1
     rng_state: list | None = None
@@ -230,7 +239,12 @@ class GameState:
         return char
 
     def projects_of(self, cid):
+        """Projects this character leads."""
         return [p for p in self.projects.values() if p.leader_id == cid]
+
+    def helping(self, cid):
+        """The people's works this character is helping with."""
+        return [p for p in self.projects.values() if cid in p.helpers]
 
     def total_population(self):
         return sum(s.population for s in self.settlements.values())

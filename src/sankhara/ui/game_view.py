@@ -6,7 +6,7 @@ from kivy.uix.label import Label
 from kivy.uix.popup import Popup
 from kivy.uix.scrollview import ScrollView
 
-from sankhara.sim import discoveries, game
+from sankhara.sim import discoveries, game, projects
 from sankhara.sim.people import family_of
 from sankhara.sim.peoples import relation_word
 from sankhara.sim.stations import ACTION_SLOTS, station_title
@@ -48,13 +48,18 @@ WORK_NAMES = {
     "weir": "a fish weir",
     "herd": "herds",
     "sacred": "a sacred place",
+    "paths": "paths to the other camps",
 }
 SECTIONS = {
     "obligation": "Expected of you",
-    "continue": "Carry on",
-    "project": "Take on something lasting",
+    "continue": "What you are working on",
+    "join": "The people's works under way",
+    "rally": "Call others to your work",
+    "project": "Begin something for the people",
+    "personal": "For yourself and your family",
     "deed": "This year",
 }
+WORKS_SHOWN = 6
 
 
 def _section(parent, title):
@@ -194,13 +199,18 @@ class FormChoicePopup(Popup):
         self.state = state
         self.on_chosen = on_chosen
         d = discoveries.DISCOVERIES[state.pending_choice]
-        content = BoxLayout(orientation="vertical", spacing=8, padding=[10, 8])
-        content.add_widget(
-            WrapLabel(text=f"{d.text}\n\n{muted('How should it be among our people?')}")
+        deciding = state.pending_mode == "decide"
+        question = (
+            "How should it be among our people?"
+            if deciding
+            else "The people are deciding how it should be. What will you speak for?"
         )
+        content = BoxLayout(orientation="vertical", spacing=8, padding=[10, 8])
+        content.add_widget(WrapLabel(text=f"{d.text}\n\n{muted(question)}"))
         for form in d.forms:
+            label = form.name if deciding else f"Speak for: {form.name.lower()}"
             btn = ThemedButton(
-                text=f"[b]{form.name}[/b]\n{muted(form.text)}",
+                text=f"[b]{label}[/b]\n{muted(form.text)}",
                 markup=True,
                 size_hint_y=None,
                 height=64,
@@ -273,14 +283,17 @@ class ChooserPopup(Popup):
         cost = cost_text(opt.cost, nation)
         if opt.cost and state.player.station == "leader":
             cost += " (common)" if opt.scope == "people" else " (yours)"
-        if opt.kind == "continue":
-            cost = f"{years_text(opt.years, about=opt.project.kind == 'pursue')} more  ·  {cost}"
-        elif opt.kind == "project":
+        if opt.kind in ("continue", "join"):
+            cost = f"about {years_text(opt.years)} more  ·  {cost} a year"
+        elif opt.kind in ("project", "personal"):
             about = opt.project.definition.id == "pursue"
             cost = f"{years_text(opt.years, about=about)}  ·  {cost} a year"
         name = f"[b]{opt.name}[/b]"
         if opt.kind == "obligation":
             name = f"[color={ACCENT_HEX}]{name}[/color]  {muted(opt.blurb)}"
+        elif opt.thread:
+            worked = ", ".join(opt.project.worked_by)
+            name = f"[color={ACCENT_HEX}]{name}[/color]  {muted('worked on by ' + worked)}"
         detail = muted(f"{opt.text}  ·  {cost}")
         if taken_elsewhere:
             detail += muted("  ·  already planned")
@@ -368,8 +381,10 @@ class YearPanel(BoxLayout):
                 text = f"{mark}{opt.name}"
                 if opt.kind == "continue":
                     p = opt.project
-                    text += muted(f"  ·  year {p.years_done + 1}")
-                elif opt.kind == "project":
+                    word = projects.progress_word(projects.progress(state, p))
+                    helping = p.leader_id != state.player_id
+                    text += muted(f"  ·  {'helping, ' if helping else ''}{word}")
+                elif opt.kind in ("project", "personal", "join"):
                     text += muted("  ·  new")
                 btn.text = text
                 btn.color = TEXT
@@ -407,6 +422,36 @@ class YearPanel(BoxLayout):
             ChooserPopup(self.state, slot, on_pick=lambda: self.refresh(self.state)).open()
 
 
+def works_text(state):
+    """The people's works under way: what, who leads, how far along. Yours are marked."""
+    works = [p for p in state.projects.values() if p.common]
+    if not works:
+        return muted("Nothing is being built or worked out in common.")
+    me = state.player_id
+
+    def order(p):
+        return (me not in (p.leader_id, *p.helpers), not p.worked_by, -projects.progress(state, p))
+
+    rows = []
+    for p in sorted(works, key=order)[:WORKS_SHOWN]:
+        leader = state.character(p.leader_id)
+        if p.leader_id == me:
+            who = "you"
+        elif leader:
+            who = leader.full_name
+        else:
+            who = "no one"
+        helpers = len(p.helpers) + (1 if p.support > 0.5 else 0)
+        crowd = f", {helpers} helping" if helpers else ""
+        word = projects.progress_word(projects.progress(state, p))
+        name = projects.display_name(state, p)
+        mark = f"[color={ACCENT_HEX}]•[/color] " if me in (p.leader_id, *p.helpers) else "• "
+        rows.append(f"{mark}{name}  {muted(f'· {who}{crowd} · {word}')}")
+    if len(works) > WORKS_SHOWN:
+        rows.append(muted(f"and {len(works) - WORKS_SHOWN} more"))
+    return "\n".join(rows)
+
+
 class GameView(BoxLayout):
     """Holds the current GameState and wires the panels to the simulation."""
 
@@ -424,6 +469,9 @@ class GameView(BoxLayout):
         centre.add_widget(self.map_view)
         self.tile_label = WrapLabel(text="", font_size=13, color=TEXT)
         centre.add_widget(self.tile_label)
+        centre.add_widget(WrapLabel(text=heading("The people's works")))
+        self.works_label = WrapLabel(text="", font_size=13)
+        centre.add_widget(self.works_label)
         self.add_widget(centre)
         self.year = YearPanel(on_end_year=self.end_year, on_auto=self.toggle_auto, size_hint_x=0.30)
         self.add_widget(self.year)
@@ -447,6 +495,7 @@ class GameView(BoxLayout):
         )
         self.character.refresh(state)
         self.year.refresh(state)
+        self.works_label.text = works_text(state)
         if self.map_view.selected_tile:
             self.on_tile_selected(self.map_view.selected_tile)
         else:

@@ -4,18 +4,23 @@ from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.label import Label
 from kivy.uix.scrollview import ScrollView
 
-from sankhara.ui.theme import ACCENT, AccentButton, ThemedButton, WrapLabel, muted
+from sankhara.ui.theme import ACCENT, AccentButton, ThemedButton, WrapLabel, heading, muted
+
+LEGACY_SHOWN = 8
 
 
 def format_life(life):
-    return "\n".join(
-        [
-            f"[b]{life['name']}[/b]",
-            f"{life['station']} of {life['settlement']}",
-            f"Year {life['born']} to year {life['died']}, aged {life['age']}",
-            muted(f"Died of {life['cause']}"),
-        ]
-    )
+    lines = [
+        f"[b]{life['name']}[/b]",
+        f"{life['station']} of {life['settlement']}",
+        f"Year {life['born']} to year {life['died']}, aged {life['age']}",
+        muted(f"Died of {life['cause']}"),
+    ]
+    legacy = life.get("legacy", [])
+    if legacy:
+        lines.append("\n" + heading("What they had a hand in"))
+        lines += legacy[-LEGACY_SHOWN:]
+    return "\n".join(lines)
 
 
 def format_earlier_lives(lives):

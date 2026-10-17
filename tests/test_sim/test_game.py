@@ -76,9 +76,21 @@ def test_a_project_holds_its_slot_until_finished(state):
     assert any(i.startswith("Finished") for i in report.interrupts)
 
 
-def test_clearing_a_projects_slot_sets_it_aside(state):
+def test_setting_aside_the_peoples_work_passes_it_on(state):
     _quiet(state)
     game.choose(state, 0, "new:teach_young:")
+    game.end_year(state)
+    project = state.projects_of(state.player_id)[0]
+    state.events = []
+    state.plan = [None] * ACTION_SLOTS
+    game.end_year(state)
+    assert project.leader_id != state.player_id
+    assert str(project.id) not in state.commitments
+
+
+def test_setting_aside_your_own_undertaking_ends_it(state):
+    _quiet(state)
+    game.choose(state, 0, "new:hoard:")
     game.end_year(state)
     project = state.projects_of(state.player_id)[0]
     state.events = []
@@ -306,3 +318,112 @@ def test_long_game_stays_sane(play):
     assert any(n.met for n in s.neighbours.values())
     assert len(s.characters) < 600
     assert s.player.alive
+
+
+# --- leading from wherever you are --------------------------------------------
+
+
+def _not_leading(state):
+    """Make the player an ordinary hunter, with someone else leading."""
+    from sankhara.sim.people import create_character
+
+    leader = create_character(state, "leader", state.seat.id, state.year - 40)
+    state.nation.leader_id = leader.id
+    state.player.station = "hunter"
+    return leader
+
+
+def test_anyone_can_begin_the_peoples_work(state):
+    _not_leading(state)
+    _quiet(state)
+    keys = {o.key for o in game.options(state) if o.kind == "project"}
+    assert any(k.startswith("new:gathering:") for k in keys)
+    key = next(k for k in keys if k.startswith("new:gathering:"))
+    assert game.choose(state, 0, key)
+    game.end_year(state)
+    project = state.projects_of(state.player_id)[0]
+    assert project.common and project.started_by == state.player.full_name
+
+
+def test_helping_with_anothers_work_speeds_it(state):
+    from sankhara.sim import projects
+
+    leader = _not_leading(state)
+    _quiet(state)
+    option = next(o for o in projects.options_for(state, leader) if o.definition.id == "gathering")
+    project = projects.start(state, leader, option)
+    key = f"join:{project.id}"
+    assert any(o.key == key for o in game.options(state))
+    assert game.choose(state, 0, key)
+    state.nation.stores.set("hands", 99)
+    leader.means.set("hands", 99)
+    game.end_year(state)
+    assert state.player_id in project.helpers
+    assert project.done > 1.0  # more than the leader alone
+    assert state.plan[0] == f"p:{project.id}"  # and it keeps the slot
+
+
+def test_calling_others_to_a_work_brings_help(state):
+    _quiet(state)
+    game.choose(state, 0, "new:teach_young:")
+    game.end_year(state)
+    project = state.projects_of(state.player_id)[0]
+    state.events = []
+    state.player.means.set("regard", 60)
+    assert game.choose(state, 1, f"rally:{project.id}")
+    game.end_year(state)
+    assert project.support > 0
+    assert any("called on others" in line for line in state.log[-2:])
+
+
+def test_work_outlives_the_life_that_began_it(state):
+    _quiet(state)
+    game.choose(state, 0, "new:teach_young:")
+    game.end_year(state)
+    project = state.projects_of(state.player_id)[0]
+    first = state.player.full_name
+    state.player.death_age = state.player.age(state.year)
+    state.events = []
+    assert game.end_year(state).life_ended
+    assert str(project.id) in state.projects
+    lines = game.begin_next_life(state)
+    if str(project.id) in state.projects:
+        # still unfinished: the new life hears of it and can take part
+        assert any(first in line and "unfinished" in line.lower() for line in lines)
+        threads = [o for o in game.options(state) if o.thread]
+        assert threads and threads[0].project.id == project.id
+    else:
+        # finished while the new character grew up, and remembered
+        assert any(first in e["names"] for e in state.legacy)
+
+
+def test_finished_work_is_remembered_in_the_life_summary(state):
+    _quiet(state)
+    game.choose(state, 0, "new:teach_young:")
+    for _ in range(12):
+        state.player.means.set("hands", 10)
+        game.end_year(state)
+        state.events = []
+        if not any(p.kind == "teach_young" for p in state.projects.values()):
+            break
+    assert state.legacy
+    state.player.death_age = state.player.age(state.year)
+    game.end_year(state)
+    assert state.soul.lives[-1]["legacy"]
+
+
+def test_anyone_can_speak_for_how_a_custom_should_be():
+    urged = 0
+    for seed in range(20):
+        s = game.new_game(seed=seed)
+        _not_leading(s)
+        _quiet(s)
+        d = discoveries.DISCOVERIES["gifts"]
+        s.nation.insight[d.id] = d.cost
+        game.end_year(s)
+        assert s.pending_choice == "gifts" and s.pending_mode == "voice"
+        s.player.means.set("regard", 100)
+        line = game.choose_form(s, "feasts")
+        urged += s.nation.known["gifts"] == "feasts"
+        assert "urged" in line or "spoke" in line
+    assert urged >= 12  # a respected voice usually carries
