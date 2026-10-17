@@ -5,11 +5,11 @@ from kivy.uix.popup import Popup
 from sankhara.ui.theme import ACCENT, MUTED, PANEL, TEXT, AccentButton, ThemedButton, WrapLabel
 
 ABOUT_TEXT = (
-    "Sankhara is the chronicle of a nation, lived one person at a time. Each year "
-    "you decide where your attention goes, and the realm, your family and the "
-    "people around you carry on with or without you.\n\n"
-    "Lives end. The nation does not. There is no winning, only how you spend "
-    "the years you are given."
+    "Sankhara follows a small people from their first fires, lived one person at a "
+    "time. Each year you decide where your attention goes, and your family, your "
+    "people and those around you carry on with or without you.\n\n"
+    "What they come to know, and what they make of it, is up to the lives that "
+    "live it."
 )
 
 

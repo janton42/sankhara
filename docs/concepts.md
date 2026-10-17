@@ -58,3 +58,36 @@ Rebirth. Rebirth always stays within the same nation. Social station at rebirth 
 Tendencies (saṅkhāra). The past life’s habitual choices become the next life’s default impulses. They are never shown as labels or a character sheet and are only felt through the interface: some actions are cheaper in attention or resources, more prominent or tempting, or carry friction. The effect is a mild-to-moderate nudge that can always be overridden at a small extra cost. Effects must be consistent enough to be learnable. Tendencies shift throughout life at a constant rate: repetition strengthens them and acting against them weakens them, and the pattern at death is what carries into the next life.
 
 NPCs. NPCs use the same model in simplified form, with tendencies that shift based on coarsely simulated choices. Rulers, heirs, advisors, and people near the player or in positions of power are tracked in detail, and the rest are handled statistically. Because rebirth stays in one nation, the people the player influenced remain, and the player can be reborn into the consequences of how they treated and shaped them.
+
+
+## Updates after first play through (basic UI done from Milestone 1)
+No descriptions of the game, including "about" sections or subtitles, should
+give away the "punchline" of their being "no winning". That's a huge spoiler,
+so it should never be explicit. Similarly, the karma mechanism should not be
+explicitly stated. Starting @ 20 is acceptable for now, but the civilization
+is far too advanced. It needs to start much further back without so many modern
+assumptions applied. There should not yet be coin money or "goods" to be traded.
+Imagine the first tribe of people that became modern humans that walked out of Africa,
+that's where you start, but not in Africa. It should be a small tribe, max 1,500,
+with no clear economic system, no farming, nothing but some oral traditions,
+superstitions/religius beleifs, names, language, but socially very early in
+their development. Currency, trade, cities, all of that needs to be discovered,
+designed, developed. But I don't want it to be prescribed as coming out the way
+things are now in the real world (e.g. coins, banks, etc.). This game should be more
+fluid than that, and play more like a simulation of human society over generations that
+a player can influence through their decisions. War is specifically deprioritized,
+so nothing about combat or armies to start, but that is something that will need to be addressed,
+becuase violence is real, and I want some aspects of it in the game. It can't be the focus, though.
+
+A separate design effort needs to be made for the attention choices. They're okay to
+start, and as fillers, but this needs some close attention.
+
+There should be multi-year projects with interupting events every few years, instead of
+having to manually choose minutia events each year. Similar to the mechanism in civilization
+with research, or building, or whatever taking a few turns, and if "auto end turn" is
+selected, the game runs the plan until something (e.g. disaster, other player)
+interrupts.
+
+Much of the development mechanism should be like Civilization, which is an excellent game,
+but there's way too much of a focus on combat. The development mechanisms, though, are
+very good and should be thought of as a guide for Sankhara.

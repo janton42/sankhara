@@ -1,8 +1,9 @@
-"""The game loop: found a nation, play a year at a time as the current character,
-and when a life ends, begin the next one somewhere else in the same nation.
+"""The game loop: a small people at the start of everything, played a year at a time as
+the current character; when a life ends, the next begins somewhere else among the
+same people.
 
-The UI only talks to this module: `new_game`, `options`, `choose`,
-`remaining_budget`, `end_year` and `begin_next_life`.
+The UI only talks to this module: `new_game`, `options`, `choose`, `affordable`,
+`remaining_budget`, `end_year`, `choose_form` and `begin_next_life`.
 """
 
 import math
@@ -11,54 +12,60 @@ from dataclasses import dataclass, field
 from sankhara.constants.config import CULTURE_GROUPS
 from sankhara.core.game_engine import new_seed
 from sankhara.entities.namer import make_family_name
-from sankhara.sim import tendencies
+from sankhara.sim import discoveries, projects, tendencies
 from sankhara.sim.actions import ACTIONS, Ctx, actions_for, budget_for, effective_cost
-from sankhara.sim.events import (
-    generate_events,
-    obligation_key,
-    resolve_events,
+from sankhara.sim.events import generate_events, obligation_key, resolve_events
+from sankhara.sim.nation import (
+    capacity,
+    economy_year,
+    hands_available,
+    households_year,
+    refresh_averages,
 )
-from sankhara.sim.nation import economy_year, households_year, refresh_nation_averages
 from sankhara.sim.npc import npc_year
 from sankhara.sim.people import (
     age_and_health,
+    child_role,
     create_character,
     create_spouse,
     die,
-    ensure_court,
+    ensure_elders,
     succeed,
     yearly_lifecycle,
 )
-from sankhara.sim.state import CATEGORIES, Budget, GameState, Nation, Settlement, Soul
-from sankhara.sim.stations import ACTION_SLOTS, ADULT_AGE, STATIONS, station_title
-from sankhara.sim.world import map_for_seed, tile_fertility
+from sankhara.sim.peoples import neighbours_year, place_neighbours
+from sankhara.sim.state import Budget, GameState, Nation, Settlement, Soul
+from sankhara.sim.stations import ACTION_SLOTS, ADULT_AGE, STATIONS, rebirth_weights, station_title
+from sankhara.sim.world import all_tiles, forage_value, map_for_seed, place_name
 from sankhara.world.hexgrid import distance
 
 KARMA_SCALE = 0.15  # how fast a year's choices move the hidden ledger
+FORM_KARMA = 0.3  # how much choosing the shape of a custom weighs, relative to a deed
 KARMA_SPENT_AT_REBIRTH = 0.5  # share of karma used up shaping the new life
-REALM_RADIUS = 2
-VILLAGES = 4
+RANGE_RADIUS = 2
+CAMPS = 3
+START_FILL = 0.42  # how full each camp's land is at the start
 LOG_LIMIT = 400
 
 
 # --- founding ----------------------------------------------------------------
 
 
-def _pick_capital(m, rng):
+def _culture_for(t):
+    culture = t["biome"].split(" ")[0]
+    return culture if culture in CULTURE_GROUPS else "Plain"
+
+
+def _pick_seat(m, rng):
     cols, rows = len(m), len(m[0])
     interior = [
         t
-        for col in m
-        for t in col
-        if REALM_RADIUS <= t["q"] < cols - REALM_RADIUS
-        and REALM_RADIUS <= t["r"] < rows - REALM_RADIUS
+        for t in all_tiles(m)
+        if RANGE_RADIUS <= t["q"] < cols - RANGE_RADIUS
+        and RANGE_RADIUS <= t["r"] < rows - RANGE_RADIUS
     ]
-    interior.sort(key=tile_fertility, reverse=True)
+    interior.sort(key=forage_value, reverse=True)
     return rng.choice(interior[: max(1, len(interior) // 4)])
-
-
-def _settlement_name(culture, rng):
-    return make_family_name(culture, rng)
 
 
 def new_game(seed=None):
@@ -67,64 +74,71 @@ def new_game(seed=None):
     state = GameState(
         seed=seed,
         year=1,
-        nation=Nation("", "", "", Budget(150, 60, 120), []),
+        nation=Nation("", "", Budget({"food": 40.0, "hands": 0.0}), []),
         soul=Soul(),
         player_id=0,
     )
     rng = state.rng()
-    capital_tile = _pick_capital(m, rng)
-    culture = capital_tile["biome"].split(" ")[0]
-    if culture not in CULTURE_GROUPS:
-        culture = "Plain"
+    seat_tile = _pick_seat(m, rng)
+    culture = _culture_for(seat_tile)
     nation = state.nation
     nation.culture = culture
     nation.name = make_family_name(culture, rng)
-    cap = (capital_tile["q"], capital_tile["r"])
+    seat = (seat_tile["q"], seat_tile["r"])
     nation.territory = [
-        [t["q"], t["r"]]
-        for col in m
-        for t in col
-        if distance(cap, (t["q"], t["r"])) <= REALM_RADIUS
+        [t["q"], t["r"]] for t in all_tiles(m) if distance(seat, (t["q"], t["r"])) <= RANGE_RADIUS
     ]
+    for did in discoveries.START_KNOWN:
+        d = discoveries.DISCOVERIES[did]
+        nation.known[did] = rng.choice(d.forms).id if d.forms else ""
 
-    capital = Settlement(state.new_id(), _settlement_name(culture, rng), *cap, 1200.0, True)
-    state.settlements[str(capital.id)] = capital
-    sites = [tuple(t) for t in nation.territory if distance(cap, tuple(t)) == REALM_RADIUS]
+    home = Settlement(state.new_id(), place_name(state, culture, rng), *seat, 0.0, is_seat=True)
+    state.settlements[str(home.id)] = home
+    sites = [tuple(t) for t in nation.territory if distance(seat, tuple(t)) == RANGE_RADIUS]
     rng.shuffle(sites)
     for col, row in sites:
-        if len(state.settlements) > VILLAGES:
+        if len(state.settlements) >= CAMPS:
             break
         if all(distance((col, row), (s.col, s.row)) >= 2 for s in state.settlements.values()):
-            s = Settlement(
-                state.new_id(), _settlement_name(culture, rng), col, row, rng.uniform(300, 600)
-            )
+            s = Settlement(state.new_id(), place_name(state, culture, rng), col, row, 0.0)
             state.settlements[str(s.id)] = s
-    refresh_nation_averages(state)
+    for s in state.settlements.values():
+        s.population = max(50.0, START_FILL * capacity(state, s) * rng.uniform(0.9, 1.1))
+    refresh_averages(state)
+    nation.stores.set("hands", hands_available(state))
 
-    # the first life: a young ruler, newly crowned
-    soul_tendencies = tendencies.random_tendencies(rng, 0.2)
-    ruler = create_character(
-        state, "ruler", capital.id, state.year - 20, tendencies=dict(soul_tendencies)
+    place_neighbours(state, _culture_for, rng)
+    for d in rng.sample(discoveries.available(state), 3):
+        nation.insight[d.id] = d.cost * rng.uniform(0.15, 0.35)
+
+    # the first life: a young leader, whose mother led the people before
+    leader = create_character(
+        state,
+        "leader",
+        home.id,
+        state.year - 20,
+        tendencies=tendencies.random_tendencies(rng, 0.2),
     )
-    ruler.is_player = True
-    ruler.health = 85
-    nation.dynasty = ruler.family_name
-    nation.ruler_id = ruler.id
-    state.player_id = ruler.id
-    father = create_character(
-        state, "noble", capital.id, state.year - 52, gender="male", family_name=ruler.family_name
+    leader.is_player = True
+    leader.health = 85
+    leader.means.set("hands", STATIONS["leader"].hands)
+    nation.leader_id = leader.id
+    nation.leading_family = leader.family_name
+    state.player_id = leader.id
+    mother = create_character(
+        state, "keeper", home.id, state.year - 44, gender="female", family_name=leader.family_name
     )
-    mother = create_spouse(state, father)
-    mother.birth_year = state.year - 46
-    father.children.append(ruler.id)
-    mother.children.append(ruler.id)
-    ruler.father_id, ruler.mother_id = father.id, mother.id
-    die(state, father, "a winter fever")
-    ensure_court(state)
+    father = create_spouse(state, mother)
+    father.birth_year = state.year - 47
+    for parent in (mother, father):
+        parent.children.append(leader.id)
+    leader.mother_id, leader.father_id = mother.id, father.id
+    die(state, mother, "a winter fever")
+    ensure_elders(state)
 
     state.log.append(
-        f"[b]Year {state.year}[/b]  Your father has died. At twenty, {ruler.full_name} rules "
-        f"{nation.name} from {capital.name}."
+        f"[b]Year {state.year}[/b]  Your mother, who led the {nation.name}, died this winter. "
+        f"The people have turned to you, {leader.full_name}, though you are only twenty."
     )
     begin_year(state)
     return state
@@ -135,26 +149,42 @@ def new_game(seed=None):
 
 @dataclass
 class Option:
-    """Something the player could spend a slot on this year."""
+    """Something the player could give a slot of attention to this year."""
 
-    key: str  # plan entry: an action id, or "event:<i>" for an obligation
-    action: object
-    cost: dict
+    key: str  # plan entry: "event:<i>", "p:<project id>", "new:<kind>:<target>" or a deed id
+    kind: str  # "obligation", "continue", "project" or "deed"
+    name: str
+    text: str
+    cost: dict  # per year
     pull: float  # hidden affinity; the UI uses it only to order and tint
-    obligation: bool = False
-    event_index: int | None = None
+    tags: tuple
+    scope: str  # "people" or "own": what the cost is drawn from
+    years: int = 1
     blurb: str = ""
+    action: object = None
+    project: object = None  # a ProjectOption (new) or Project (continue)
+    event_index: int | None = None
 
 
 @dataclass
 class YearReport:
     year: int
     lines: list[str] = field(default_factory=list)
+    interrupts: list[str] = field(default_factory=list)
     life_ended: bool = False
 
 
+def _scope(state, char, item):
+    return "people" if budget_for(state, char, item) is state.nation.stores else "own"
+
+
+def _new_key(option):
+    return f"new:{option.definition.id}:{option.target or ''}"
+
+
 def options(state):
-    """Everything the player can choose this year: obligations first, then by inclination."""
+    """Everything the player can choose this year: what's expected first, then what they're
+    already doing, then new undertakings and this year's deeds, by inclination."""
     player = state.player
     out = []
     for i, event in enumerate(state.events):
@@ -163,22 +193,68 @@ def options(state):
             out.append(
                 Option(
                     obligation_key(i),
-                    action,
-                    effective_cost(player, action),
+                    "obligation",
+                    action.name,
+                    action.text,
+                    effective_cost(state, player, action),
                     tendencies.affinity(player.tendencies, action.tags),
-                    True,
-                    i,
-                    event.text,
+                    action.tags,
+                    _scope(state, player, action),
+                    blurb=event.text,
+                    action=action,
+                    event_index=i,
                 )
             )
-    obligated = {o.action.id for o in out}
-    regular = [
-        Option(a.id, a, effective_cost(player, a), tendencies.affinity(player.tendencies, a.tags))
+    for project in sorted(state.projects_of(player.id), key=lambda p: p.slot):
+        d = projects.PROJECTS[project.kind]
+        out.append(
+            Option(
+                f"p:{project.id}",
+                "continue",
+                projects.display_name(state, project),
+                d.text,
+                projects.yearly_cost(state, project),
+                tendencies.affinity(player.tendencies, d.tags),
+                d.tags,
+                _scope(state, player, d),
+                years=max(1, project.years_needed - project.years_done),
+                project=project,
+            )
+        )
+    new = [
+        Option(
+            _new_key(o),
+            "project",
+            o.name,
+            o.definition.text,
+            o.cost,
+            tendencies.affinity(player.tendencies, o.definition.tags),
+            o.definition.tags,
+            _scope(state, player, o.definition),
+            years=o.years,
+            project=o,
+        )
+        for o in projects.options_for(state, player)
+    ]
+    obligated = {o.action.id for o in out if o.action}
+    deeds = [
+        Option(
+            a.id,
+            "deed",
+            a.name,
+            a.text,
+            effective_cost(state, player, a),
+            tendencies.affinity(player.tendencies, a.tags),
+            a.tags,
+            _scope(state, player, a),
+            action=a,
+        )
         for a in actions_for(state, player)
         if a.id not in obligated
     ]
-    regular.sort(key=lambda o: -o.pull)
-    return out + regular
+    new.sort(key=lambda o: -o.pull)
+    deeds.sort(key=lambda o: -o.pull)
+    return out + new + deeds
 
 
 def option_for(state, key):
@@ -186,29 +262,21 @@ def option_for(state, key):
 
 
 def remaining_budget(state, excluding_slot=None):
-    """Treasury and household left after the costs of the other planned slots."""
-    player = state.player
-    treasury = Budget(**{c: state.nation.treasury.get(c) for c in CATEGORIES})
-    household = Budget(**{c: player.household.get(c) for c in CATEGORIES})
+    """Common stores and the player's own means left after the other planned slots."""
+    stores = state.nation.stores.copy()
+    own = state.player.means.copy()
     for i, key in enumerate(state.plan):
         if key is None or i == excluding_slot:
             continue
         opt = option_for(state, key)
-        if opt is None:
-            continue
-        target = (
-            treasury
-            if budget_for(state, player, opt.action) is state.nation.treasury
-            else household
-        )
-        target.spend(opt.cost)
-    return treasury, household
+        if opt is not None:
+            (stores if opt.scope == "people" else own).spend(opt.cost)
+    return stores, own
 
 
 def affordable(state, opt, slot):
-    treasury, household = remaining_budget(state, excluding_slot=slot)
-    is_treasury = budget_for(state, state.player, opt.action) is state.nation.treasury
-    return (treasury if is_treasury else household).can_afford(opt.cost)
+    stores, own = remaining_budget(state, excluding_slot=slot)
+    return (stores if opt.scope == "people" else own).can_afford(opt.cost)
 
 
 def choose(state, slot, key):
@@ -229,16 +297,26 @@ def begin_year(state):
     state.modifiers = {}
     state.events = generate_events(state, state.player)
     state.plan = [None] * ACTION_SLOTS
-    # habit pre-fills slots with what this character is drawn to
+    for project in sorted(state.projects_of(state.player_id), key=lambda p: p.slot):
+        slot = project.slot if state.plan[project.slot] is None else state.plan.index(None)
+        project.slot = slot
+        state.plan[slot] = f"p:{project.id}"
+    # habit fills empty slots with what this character is drawn to
     state.defaults = []
     for opt in options(state):
-        if len(state.defaults) >= ACTION_SLOTS:
+        if None not in state.plan:
             break
-        if opt.obligation or opt.pull < tendencies.DEFAULT_THRESHOLD:
+        if opt.kind in ("obligation", "continue") or opt.pull < tendencies.DEFAULT_THRESHOLD:
             continue
-        slot = len(state.defaults)
-        if choose(state, slot, opt.key):
+        if choose(state, state.plan.index(None), opt.key):
             state.defaults.append(opt.key)
+
+
+def _tags_for_key(key):
+    if key.startswith("new:"):
+        return projects.PROJECTS[key.split(":")[1]].tags
+    action = ACTIONS.get(key)
+    return action.tags if action else ()
 
 
 def end_year(state):
@@ -246,42 +324,63 @@ def end_year(state):
     rng = state.rng()
     player = state.player
     report = YearReport(state.year)
-    lines = report.lines
+    lines, interrupts = report.lines, report.interrupts
     karma = 0.0
 
-    chosen_ids = set()
-    for key in state.plan:
-        if key is None:
-            continue
-        opt = option_for(state, key)
+    chosen = [(slot, option_for(state, key)) for slot, key in enumerate(state.plan) if key]
+    worked = set()
+    for slot, opt in chosen:
         if opt is None:
             continue
-        event = state.events[opt.event_index] if opt.obligation else None
-        budget_for(state, player, opt.action).spend(opt.cost)
-        result = opt.action.effect(Ctx(state, player, rng, event))
-        lines.append(f"{opt.action.name}: {result}")
-        karma += opt.action.karma
-        tendencies.strengthen(player.tendencies, opt.action.tags)
-        chosen_ids.add(opt.action.id)
+        if opt.kind in ("deed", "obligation"):
+            event = state.events[opt.event_index] if opt.kind == "obligation" else None
+            budget_for(state, player, opt.action).spend(opt.cost)
+            result = opt.action.effect(Ctx(state, player, rng, event))
+            lines.append(f"{opt.action.name}: {result}")
+            karma += opt.action.karma
+            tendencies.strengthen(player.tendencies, opt.tags)
+            continue
+        if opt.kind == "project":
+            project = projects.start(state, player, opt.project, slot)
+            lines.append(f"You took on something new: {_lower_first(opt.name)}.")
+        else:
+            project = opt.project
+        worked.add(project.id)
+        name = projects.display_name(state, project)
+        line, outcome = projects.work_year(state, project, rng)
+        if outcome != "stalled":
+            karma += projects.PROJECTS[project.kind].karma
+            tendencies.strengthen(player.tendencies, opt.tags)
+        if line:
+            lines.append(line)
+        if outcome == "done":
+            interrupts.append(f"Finished: {name}.")
+        elif outcome == "stalled":
+            interrupts.append(f"Stalled for want of means: {name}.")
+    for project in state.projects_of(player.id):
+        if project.id not in worked:
+            projects.abandon(state, project)
+            tendencies.weaken(player.tendencies, projects.PROJECTS[project.kind].tags)
+            name = _lower_first(projects.display_name(state, project))
+            lines.append(f"You set aside: {name}.")
     for key in state.defaults:
         if key not in state.plan:
-            tendencies.weaken(player.tendencies, ACTIONS[key].tags)
+            tendencies.weaken(player.tendencies, _tags_for_key(key))
 
     notes, obligation_karma = resolve_events(state, state.plan)
     lines += notes
     karma += obligation_karma
     state.soul.karma = tendencies.clamp(state.soul.karma + KARMA_SCALE * karma)
 
-    lines += npc_year(state)
-    lines += economy_year(state)
-    lines += households_year(state)
-    lines += yearly_lifecycle(state)
-    was_ruler = player.station == "ruler"
-    note = succeed(state)
-    if note:
-        lines.append(note)
-        if player.station == "ruler" and not was_ruler:
-            lines.append("[b]The throne is yours.[/b]")
+    if state.pending_choice:
+        # nobody chose, so the people's own leanings decide
+        lines.append(_learn(state, state.pending_choice, None, rng))
+        state.pending_choice = None
+
+    was_leader = player.station == "leader"
+    _world_year(state, (), lines, interrupts)
+    if player.station == "leader" and not was_leader:
+        interrupts.append("The people have turned to you to lead them.")
 
     cause = age_and_health(state, player, rng)
     if cause:
@@ -292,13 +391,107 @@ def end_year(state):
         if note:
             lines.append(note)
     else:
-        ensure_court(state)
+        ensure_elders(state)
 
     _log(state, state.year, lines)
     state.year += 1
-    if not report.life_ended:
+    if report.life_ended:
+        interrupts.insert(0, "A life has ended.")
+    else:
         begin_year(state)
+        if any(e.obligation for e in state.events):
+            interrupts.append("Something is expected of you.")
+        if state.pending_choice:
+            name = discoveries.DISCOVERIES[state.pending_choice].name
+            interrupts.append(f"A choice must be made: {name.lower()}.")
     return report
+
+
+def _lower_first(text):
+    return text[:1].lower() + text[1:]
+
+
+def _world_year(state, protect, lines, interrupts):
+    """Everything that happens whatever the player does."""
+    rng = state.rng()
+    player = state.player
+    near = {player.spouse_id, player.mother_id, player.father_id, *player.children}
+    alive_before = {cid for cid in near if cid and state.character(cid).alive}
+    kids_before = len(player.children)
+
+    lines += npc_year(state, protect)
+    lines += economy_year(state)
+    lines += households_year(state)
+    discoveries.yearly_insight(state, rng)
+    _settle_discoveries(state, lines, interrupts, rng)
+    notes, met = neighbours_year(state, rng)
+    lines += notes
+    interrupts += met
+    lines += yearly_lifecycle(state, protect)
+    note = succeed(state)
+    if note:
+        lines.append(note)
+
+    lost = [state.character(cid) for cid in alive_before if not state.character(cid).alive]
+    if lost and not protect:
+        interrupts.append(f"{lost[0].name} has died.")
+    if len(player.children) > kids_before and not protect:
+        interrupts.append("A child has been born to you.")
+
+
+def _player_led(state, did):
+    return any(p.kind == "pursue" and p.target == did for p in state.projects_of(state.player_id))
+
+
+def _settle_discoveries(state, lines, interrupts, rng):
+    """Ideas with enough insight become things the people know."""
+    player = state.player
+    for d in discoveries.ripe(state):
+        choosing = d.forms and (
+            _player_led(state, d.id) or (player.station == "leader" and d.domain == "kin")
+        )
+        if choosing:
+            if state.pending_choice is None:
+                state.pending_choice = d.id
+            continue
+        lines.append(_learn(state, d.id, None, rng))
+        if _player_led(state, d.id) or player.station == "leader":
+            interrupts.append(f"Something new is understood: {d.name.lower()}.")
+    # whoever was working at something now known can stop
+    for project in list(state.projects.values()):
+        if project.kind == "pursue" and project.target in state.nation.known:
+            if project.leader_id == state.player_id:
+                interrupts.append(f"Finished: {projects.display_name(state, project)}.")
+            projects.abandon(state, project)
+
+
+def _learn(state, did, form_id, rng):
+    d = discoveries.DISCOVERIES[did]
+    if d.forms and form_id is None:
+        form_id = discoveries.pick_form(state, d, rng)
+    return "The people have come to understand " + discoveries.learn(state, did, form_id or "")
+
+
+def choose_form(state, form_id):
+    """The player decides what shape a newly understood custom takes."""
+    did = state.pending_choice
+    d = discoveries.DISCOVERIES[did]
+    form = d.form(form_id)
+    player = state.player
+    tendencies.strengthen(player.tendencies, form.tags)
+    state.soul.karma = tendencies.clamp(
+        state.soul.karma + KARMA_SCALE * FORM_KARMA * tendencies.tag_karma(form.tags)
+    )
+    line = "You shaped what the people came to understand: " + discoveries.learn(
+        state, did, form_id
+    )
+    state.log.append(f"[b]Year {state.year}[/b]  {line}")
+    state.pending_choice = None
+    for project in list(state.projects.values()):
+        if project.kind == "pursue" and project.target == did:
+            projects.abandon(state, project)
+    begin_year(state)
+    return line
 
 
 def _log(state, year, lines):
@@ -318,9 +511,12 @@ def _end_life(state, cause):
             "died": state.year,
             "age": player.age(state.year),
             "cause": cause,
-            "settlement": state.settlement(player.settlement_id).name,
+            "settlement": (state.settlement(player.settlement_id) or state.seat).name,
         }
     )
+    for project in state.projects_of(player.id):
+        projects.abandon(state, project)
+    state.pending_choice = None
     die(state, player, cause)
     state.life_over = True
 
@@ -337,34 +533,32 @@ def _wholesomeness(char):
 def _candidate_mothers(state, station):
     out = []
     for c in state.living():
-        if c.gender != "female" or c.is_player or not (18 <= c.age(state.year) <= 40):
+        if c.gender != "female" or c.is_player or not (17 <= c.age(state.year) <= 40):
             continue
         husband = state.character(c.spouse_id)
         if not husband or not husband.alive:
             continue
-        if station == "ruler":
-            if husband.id == state.nation.ruler_id or c.id == state.nation.ruler_id:
+        if station == "leader":
+            if state.nation.leader_id in (c.id, husband.id):
                 out.append((c, husband))
-            elif husband.family_name == state.nation.dynasty:
-                out.append((c, husband))
-        elif husband.station == station and husband.family_name != state.nation.dynasty:
+        elif husband.station == station:
             out.append((c, husband))
     return out
 
 
 def _new_parents(state, station, karma, rng):
-    settlements = list(state.settlements.values())
-    if station in ("farmer", "artisan"):
-        settlements = [s for s in settlements if not s.is_capital] or settlements
-    elif station in ("noble", "ruler"):
-        settlements = [s for s in settlements if s.is_capital]
-    home = rng.choice(settlements)
-    father_station = "noble" if station == "ruler" else station
+    home = rng.choice(list(state.settlements.values()))
+    if station == "leader":
+        home = state.seat
     father = create_character(
-        state, father_station, home.id, state.year - rng.randint(22, 38), gender="male"
+        state,
+        station if station != "leader" else "hunter",
+        home.id,
+        state.year - rng.randint(20, 36),
+        gender="male",
     )
     mother = create_spouse(state, father)
-    mother.birth_year = state.year - rng.randint(19, 34)
+    mother.birth_year = state.year - rng.randint(18, 32)
     for parent in (father, mother):
         for t, v in tendencies.VALENCE.items():
             parent.tendencies[t] = tendencies.clamp(parent.tendencies.get(t, 0) + 0.3 * karma * v)
@@ -372,14 +566,14 @@ def _new_parents(state, station, karma, rng):
 
 
 def begin_next_life(state):
-    """Begin a new life in the same nation and fast-forward through childhood.
+    """Begin a new life among the same people and fast-forward through childhood.
 
     Returns lines describing the birth and the years of childhood.
     """
     rng = state.rng()
     soul = state.soul
     karma = soul.karma
-    weights = {s.id: s.rebirth_weight for s in STATIONS.values()}
+    weights = rebirth_weights(state.nation)
     station = rng.choices(list(weights), list(weights.values()))[0]
 
     candidates = _candidate_mothers(state, station)
@@ -390,10 +584,9 @@ def begin_next_life(state):
     else:
         mother, father = _new_parents(state, station, karma, rng)
 
-    child_station = father.station if father.station != "ruler" else "noble"
     child = create_character(
         state,
-        child_station,
+        station if station != "leader" else child_role(state, father, rng),
         father.settlement_id,
         state.year,
         mother=mother,
@@ -413,45 +606,48 @@ def begin_next_life(state):
     state.player_id = child.id
     state.life_over = False
 
-    home = state.settlement(child.settlement_id)
+    home = state.settlement(child.settlement_id) or state.seat
+    nation = state.nation
+    parent_role = station_title(father, nation).lower()
     lines = [
-        f"[b]Year {state.year}[/b]  {child.full_name} was born in {home.name} to "
-        f"{mother.full_name} and {father.full_name}, "
-        f"{STATIONS[father.station].title.lower()}{'s' if father.station != 'ruler' else ''}."
+        f"[b]Year {state.year}[/b]  {child.full_name} was born at {home.name} to "
+        f"{mother.full_name} and {father.full_name}, {parent_role}."
     ]
-    if father.station == "ruler" or father.family_name == state.nation.dynasty:
-        lines[0] = lines[0].rsplit(",", 1)[0] + ", of the ruling house."
+    if nation.leader_id in (mother.id, father.id):
+        lines[0] = lines[0].rsplit(",", 1)[0] + ", who lead the people."
 
     # childhood passes without the player's hand
     for _ in range(ADULT_AGE):
         state.modifiers = {}
         notable = [
             e.text
-            for e in generate_events(state, child, national_only=True)
-            if e.kind in ("drought", "plague", "flood")
+            for e in generate_events(state, child, whole_people_only=True)
+            if e.kind in ("lean_year", "sickness", "flood", "raid")
         ]
-        npc_year(state, protect={child.id})
-        economy_year(state)
-        households_year(state)
-        notable += yearly_lifecycle(state, protect={child.id})
-        note = succeed(state)
-        if note:
-            notable.append(note)
+        _world_year(state, {child.id}, notable, [])
+        notable = [n for n in notable if _childhood_notable(n)]
         if notable:
             _log(state, state.year, notable)
             lines.append(f"[b]Year {state.year}[/b]  " + "  ".join(notable))
         state.year += 1
 
-    child.household = Budget(**STATIONS[child.station].start)
-    child.household.add(STATIONS[child.station].start, child.fortune - 1)
-    child.household.clamp_nonnegative()
-    ensure_court(state)
+    child.means = Budget(dict(STATIONS[child.station].start))
+    child.means.add(STATIONS[child.station].start, child.fortune - 1)
+    child.means.set("hands", STATIONS[child.station].hands)
+    child.means.clamp_nonnegative()
+    ensure_elders(state)
     lines.append(
-        f"[b]Year {state.year}[/b]  {child.name} is {ADULT_AGE} and must find their own way."
+        f"[b]Year {state.year}[/b]  {child.name} is {ADULT_AGE} and must find their own way, "
+        f"as a {station_title(child, nation).lower()}."
     )
     state.log.append(lines[-1])
     begin_year(state)
     return lines
+
+
+def _childhood_notable(line):
+    """Childhood is told in broad strokes: who died, who led, what was learned, who came."""
+    return not line.startswith(("Hunger in", "The common stores", "The camps came"))
 
 
 def life_summary(state):

@@ -11,39 +11,46 @@ of game functions.
 | `sankhara.world` | Map generation (`map_gen.py`) and hex-grid math (`hexgrid.py`). |
 | `sankhara.core` | `game_engine.generate_map(seed)` builds the terrain. |
 | `sankhara.entities` | Name generation per culture (`namer.py`). |
-| `sankhara.ui` | Kivy screens: menu, game view, between-lives screen; `theme.py` palette and widgets; `words.py` turns numbers into the words the player sees. |
+| `sankhara.ui` | Kivy screens: menu, game view (with the chooser, "What we know" and the choice of a custom's form), between-lives screen; `theme.py` palette and widgets; `words.py` turns numbers into the words the player sees. |
 | `sankhara.constants` | `config.py`: map size, noise, biome thresholds and resources, culture groups. |
 | `sankhara.app` | `SankharaApp`: screen flow and autosave. |
 
 ## How the design maps to code
 
-The design lives in [Concepts](concepts.md). Milestone 1 implements the core
-loop:
+The design lives in [Concepts](concepts.md). After the first play-through the
+game starts with a small band rather than a kingdom; this is how that is built:
 
 | Design | Implementation |
 | --- | --- |
 | One turn is one year | `game.end_year()` advances the world one year, then `begin_year()` sets up the next. |
-| 2–3 action slots of personal attention | `stations.ACTION_SLOTS = 3`; `game.options()`, `choose()`. |
-| A coarse budget the actions spend | `Budget(food, goods, coin)`. Rulers spend the national treasury; everyone else their household (`actions.budget_for`). |
-| Karma only on the action layer | Each `Action` has a hidden `karma` value for its intention; skipped obligations subtract `EventInstance.penalty`. Outcomes never touch it. Stored on `Soul.karma`, clamped to [-1, 1]. |
-| Events, some random, some state-driven, not fair | `events.EVENTS`: drought, plague, famine (when settlements go hungry), unrest (low stability), sick relatives, strangers… Meeting an obligation guarantees nothing. |
+| 2–3 slots of personal attention | `stations.ACTION_SLOTS = 3`. A slot holds a one-year deed (`actions.py`), an answer to an obligation, or a multi-year project (`projects.py`). |
+| Multi-year projects, run until interrupted | A `Project` keeps its slot year after year until finished, set aside or stalled. Its cost, tags and karma count every year it is worked. `YearReport.interrupts` lists what should stop "Let the years pass": an obligation, a finished or stalled project, a discovery, a choice to make, strangers, a death or birth in the family, a life ending. |
+| A coarse budget, no money at the start | `Budget` is open-ended: food, hands (labour, renewed yearly) and regard (standing). The leader also draws on what is held in common. Exchange adds whatever form the people settle on (favours owed, wares, or tokens named for the land: shells, polished stones, beads). Costs for the common stores scale with the square root of the population. |
+| Start as the first band, not a civilisation | `game.new_game()`: about 250 people in three camps, four known things (fire, stone edges, the old songs, a belief in the unseen whose form is random), a young leader whose mother has just died. |
+| Development like Civilization, but not prescribed | `discoveries.py`: about 30 ideas in four domains (land, craft, lore, kin). One is available only when its prerequisites *and circumstances* hold (water nearby, grassland, game, having met another people, enough people). Insight comes from ordinary life every year, from someone working at it (the `pursue` project, one idea at a time), from chance events, and from other peoples. |
+| Ideas settle into forms | Discoveries like customs of giving, planting, exchange, how leaders are chosen, or judgement have several forms with different effects (`Form`). The player chooses if they worked it out, or if they lead and it is a matter of custom. Otherwise the people's own inclinations decide. A choice strengthens its tags and weighs (lightly) on karma. |
+| Roles appear as the people change | `stations.py`: leader, keeper, hunter, gatherer and maker at first; fisher, planter, herder and go-between appear with the discoveries that make them; hunters and gatherers grow rarer as herding and planting arrive. Rebirth draws from the roles that exist. |
+| How leaders are found can change | `people.next_leader()`: the most respected at first; later a council of elders, the strongest, or a lineage, depending on the form "how the people decide" takes. Titles follow (`nation.names`). |
+| Other peoples; violence real but not the focus | `peoples.py`: three other peoples, simulated coarsely. They grow, learn, meet you, share ideas, intermarry, and drift toward or away from you. Raids come as events; the obligation is to seek redress; avenging is a harsh alternative answer. No armies. |
+| Karma only on the action layer | Deeds and projects carry a hidden `karma` for their intention; skipped obligations subtract `EventInstance.penalty`. Outcomes never touch it. Stored on `Soul.karma`, clamped to [-1, 1]. |
 | Lives of 20–50 turns, random death age | `Character.death_age` is hidden: 16 + 20..50. Health can end a life sooner. |
-| Rebirth in the same nation, random station | `game.begin_next_life()`: station drawn by `Station.rebirth_weight`; childhood is fast-forwarded to age 16. |
-| Karma shapes conditions, not rank | At rebirth karma tilts carried-over tendencies (`tendencies.carry_into_next_life`), health, `fortune` (income), `family_stability` (family misfortune), parents' warmth, and which existing couple you are born to. Half of it is spent doing so. |
-| Tendencies, felt not shown | `tendencies.py`: choosing an action strengthens its tags; declining a habitual default weakens them. Inclinations change costs (±30%), the order options appear in, their tint in the chooser, and which actions are pre-filled each year. |
-| NPCs, same model simplified | `npc.py`: tracked adults choose station actions by tendency (rulers also by the realm's needs). Rulers' and nobles' choices act on the world. Upbringing and counsel pull others' tendencies toward the player's. |
-| Succession and lineage | `people.succeed()`: eldest child, then sibling; if the line fails, an advisor founds a new house. |
+| Rebirth among the same people, random role | `game.begin_next_life()`; childhood is fast-forwarded to age 16. |
+| Karma shapes conditions, not rank | Carried-over inclinations, health, fortune, family stability, parents' warmth and which family you are born to. Half of it is spent doing so. |
+| Tendencies, felt not shown | `tendencies.py`: choosing strengthens tags; declining a habitual default or setting a project aside weakens them. Inclinations change costs (±30%), order and tint in the chooser, and which deeds and projects are pre-filled in empty slots. |
+| NPCs, same model simplified | `npc.py`: tracked adults take on projects (elders and the leader always) and a deed a year by inclination; the leader also by the people's needs. Their deeds earn standing; only the leader's act on the people. |
 | No win condition | The game runs until the player stops; it autosaves every year. |
 
 ## Simulation modules
 
-- **`state.py`**: dataclasses (`GameState`, `Nation`, `Settlement`, `Character`, `Soul`, `Budget`, `EventInstance`) with `to_dict`/`from_dict`. The RNG state is saved too, so a loaded game plays on identically.
-- **`game.py`**: founding a nation (capital on fertile interior land, a realm of radius 2, a few villages, a newly crowned ruler as the first life), the yearly loop, death and the next life.
-- **`actions.py`**: about 45 actions across six stations, plus generic and obligation-only actions. Each has a cost, tags, hidden karma and an effect function.
-- **`events.py`**: event definitions, yearly generation, obligation resolution.
-- **`nation.py`**: settlement economy (harvest falls as land fills up, taxes, hunger, growth), treasury upkeep and spoilage, drift of stability and prosperity, learning and arts with diminishing returns, household income and upkeep.
-- **`people.py`**: creating characters, families, ageing, marriage and births (tracked only for the ruler's line and the player's family), succession, keeping the court staffed.
-- **`stations.py`**, **`tendencies.py`**, **`npc.py`**, **`world.py`** (cached map per seed, fertility), **`save.py`** (JSON).
+- **`state.py`**: dataclasses (`GameState`, `Nation`, `Settlement`, `Neighbour`, `Project`, `Character`, `Soul`, `Budget`, `EventInstance`) with `to_dict`/`from_dict`. The RNG state is saved too, so a loaded game plays on identically.
+- **`game.py`**: founding the people, the options for a year, the yearly loop and its interrupts, choosing a custom's form, death and the next life.
+- **`discoveries.py`**: the web of ideas, their forms and combined effects, yearly insight.
+- **`projects.py`**: multi-year undertakings: working at ideas, ranging further, new camps, gathering places, store pits, fields, teaching, raising a child, apprentices, friendship and trade with other peoples...
+- **`actions.py`**: one-year deeds for each role, and the answers events ask for.
+- **`events.py`**: event definitions, yearly generation, obligation resolution (including alternative answers).
+- **`nation.py`**: each camp's food from its land (falling as it fills up), hunger and growth, what goes into the common stores, cohesion (which strains as the people grow), plenty and lore; each tracked family's means.
+- **`people.py`**: creating characters, families, ageing, marriage (sometimes to other peoples) and births, finding a new leader, keeping a few elders.
+- **`peoples.py`**, **`stations.py`**, **`tendencies.py`**, **`npc.py`**, **`world.py`** (cached map per seed, foraging values, place names), **`save.py`** (JSON).
 
 ## World generation
 
@@ -59,6 +66,6 @@ loop:
 
 `world/hexgrid.py` is pure math for a pointy-top grid in "odd-r" offset
 coordinates: centres, exact pixel-to-tile picking, corners, neighbours,
-distance and fitting a map to a box. The map view dims land outside the realm,
-outlines its border, marks settlements (capital in saffron) and outlines the
-player's home.
+distance and fitting a map to a box. The map view dims land outside the
+people's range, outlines its border, marks camps (the leader's in saffron),
+outlines the player's home, and shows the ranges of other peoples once met.

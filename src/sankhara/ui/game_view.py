@@ -1,14 +1,15 @@
-"""The main game screen: who you are (left), the realm (centre), and your year (right)."""
+"""The main game screen: who you are (left), the land (centre), and your year (right)."""
 
+from kivy.clock import Clock
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.label import Label
 from kivy.uix.popup import Popup
 from kivy.uix.scrollview import ScrollView
 
-from sankhara.sim import game
-from sankhara.sim.actions import budget_for
+from sankhara.sim import discoveries, game
 from sankhara.sim.people import family_of
-from sankhara.sim.stations import ACTION_SLOTS, STATIONS, station_title
+from sankhara.sim.peoples import relation_word
+from sankhara.sim.stations import ACTION_SLOTS, station_title
 from sankhara.sim.world import game_map
 from sankhara.ui.screens.map_view import MapScreen
 from sankhara.ui.theme import (
@@ -26,17 +27,34 @@ from sankhara.ui.theme import (
 )
 from sankhara.ui.words import (
     budget_text,
+    cohesion_word,
     cost_text,
-    harvest_word,
+    food_word,
     health_word,
-    level_word,
+    lore_word,
+    plenty_word,
     population_text,
-    prosperity_word,
-    stability_word,
+    regard_word,
+    years_text,
 )
 
 CHRONICLE_LENGTH = 60
 PULL_TINT = 0.25  # how strong an inclination must be before it shows in the chooser
+AUTO_DELAY = 0.45  # seconds between years when letting the years pass
+WORK_NAMES = {
+    "gathering": "a gathering place",
+    "pits": "store pits",
+    "fields": "fields",
+    "weir": "a fish weir",
+    "herd": "herds",
+    "sacred": "a sacred place",
+}
+SECTIONS = {
+    "obligation": "Expected of you",
+    "continue": "Carry on",
+    "project": "Take on something lasting",
+    "deed": "This year",
+}
 
 
 def _section(parent, title):
@@ -46,36 +64,47 @@ def _section(parent, title):
     return label
 
 
+def _scrolling(widgets):
+    rows = BoxLayout(orientation="vertical", spacing=4, size_hint_y=None)
+    rows.bind(minimum_height=rows.setter("height"))
+    for w in widgets:
+        rows.add_widget(w)
+    scroll = ScrollView(do_scroll_x=False)
+    scroll.add_widget(rows)
+    return scroll
+
+
 class CharacterPanel(BoxLayout):
     def __init__(self, **kwargs):
         super().__init__(orientation="vertical", spacing=4, padding=[14, 12], **kwargs)
         fill_background(self, PANEL)
+        self.state = None
         self.name_label = WrapLabel(text="", font_size=20)
         self.add_widget(self.name_label)
         self.who_label = WrapLabel(text="")
         self.add_widget(self.who_label)
         self.means_label = _section(self, "Means")
         self.family_label = _section(self, "Family")
-        self.realm_label = _section(self, "Realm")
+        self.people_label = _section(self, "Your people")
+        self.knowledge_button = ThemedButton(text="What we know", size_hint_y=None, height=36)
+        self.knowledge_button.bind(on_release=lambda *_: self.show_knowledge())
+        self.add_widget(self.knowledge_button)
         self.add_widget(Label())  # push content to the top
 
     def refresh(self, state):
+        self.state = state
         p = state.player
         nation = state.nation
-        home = state.settlement(p.settlement_id)
-        title = station_title(p, nation)
+        home = state.settlement(p.settlement_id) or state.seat
         self.name_label.text = heading(p.full_name)
         self.who_label.text = (
-            f"{title}, aged {p.age(state.year)}, of {home.name}\n"
-            f"{muted('You feel')} {health_word(p.health)}"
+            f"{station_title(p, nation)}, aged {p.age(state.year)}, of {home.name}\n"
+            f"{muted('You feel')} {health_word(p.health)}  ·  "
+            f"{muted('you are')} {regard_word(p.means.get('regard'))}"
         )
-
-        if p.station == "ruler":
-            means = (
-                f"Treasury  {budget_text(nation.treasury)}\nHousehold  {budget_text(p.household)}"
-            )
-        else:
-            means = f"{STATIONS[p.station].household_title}  {budget_text(p.household)}"
+        means = f"Your family  {budget_text(p.means, nation)}"
+        if p.station == "leader":
+            means = f"Held in common  {budget_text(nation.stores, nation)}\n{means}"
         self.means_label.text = means
 
         family = family_of(state, p)
@@ -86,40 +115,137 @@ class CharacterPanel(BoxLayout):
         else:
             self.family_label.text = muted("You have no living family.")
 
-        ruler = state.ruler
-        if ruler and not ruler.is_player:
-            rule = f"Ruled by {ruler.full_name}, aged {ruler.age(state.year)}"
+        leader = state.leader
+        if leader and not leader.is_player:
+            led = f"Led by {leader.full_name}, aged {leader.age(state.year)}"
         else:
-            rule = "You rule"
+            led = "You lead them"
         pop = state.total_population()
         food = sum(s.food_balance for s in state.settlements.values())
-        self.realm_label.text = "\n".join(
+        kinds = {s.kind for s in state.settlements.values()}
+        place = "villages" if kinds == {"village"} else "camps"
+        self.people_label.text = "\n".join(
             [
-                f"[b]{nation.name}[/b]  ·  {rule}",
-                f"{population_text(pop)} people  ·  harvest: {harvest_word(food, pop)}",
-                f"The people are {stability_word(nation.stability)} and "
-                f"{prosperity_word(nation.prosperity)}",
-                f"Learning {level_word(nation.learning)}  ·  arts {level_word(nation.arts)}",
-                f"Taxes {nation.tax_rate:.0%}",
+                f"[b]The {nation.name}[/b]  ·  {led}",
+                f"{population_text(pop)} people in {len(state.settlements)} {place}  ·  "
+                f"food: {food_word(food, pop)}",
+                f"They are {cohesion_word(nation.cohesion)} and {plenty_word(nation.plenty)}",
+                f"Their lore is {lore_word(nation.lore)}",
             ]
         )
 
+    def show_knowledge(self):
+        if self.state is not None:
+            KnowledgePopup(self.state).open()
+
+
+class KnowledgePopup(Popup):
+    """What the people know, what is stirring, and who they have met."""
+
+    def __init__(self, state, **kwargs):
+        nation = state.nation
+        widgets = [WrapLabel(text=heading("What the people know"))]
+        for did, form_id in nation.known.items():
+            d = discoveries.DISCOVERIES[did]
+            form = d.form(form_id)
+            title = f"[b]{d.name}[/b]" + (f": {form.name.lower()}" if form else "")
+            text = form.text if form else d.text
+            widgets.append(WrapLabel(text=f"{title}\n{muted(text)}", font_size=14))
+        stirring = discoveries.stirring(state)
+        widgets.append(WrapLabel(text="\n" + heading("Stirring among the people")))
+        if not stirring:
+            widgets.append(WrapLabel(text=muted("Nothing new, for now.")))
+        for d in stirring:
+            word = discoveries.progress_word(discoveries.progress(state, d))
+            widgets.append(WrapLabel(text=f"{d.hint}\n{muted(word)}", font_size=14))
+        met = [n for n in state.neighbours.values() if n.met]
+        widgets.append(WrapLabel(text="\n" + heading("Other peoples")))
+        if not met:
+            widgets.append(WrapLabel(text=muted("No one has come from beyond our lands yet.")))
+        for n in met:
+            widgets.append(
+                WrapLabel(
+                    text=f"[b]The {n.name}[/b]  ·  {relation_word(n.relations)}  ·  "
+                    f"about {population_text(round(n.population, -1))} people",
+                    font_size=14,
+                )
+            )
+        content = BoxLayout(orientation="vertical", spacing=8, padding=[10, 8])
+        content.add_widget(_scrolling(widgets))
+        close = ThemedButton(text="Close", size_hint_y=None, height=44)
+        content.add_widget(close)
+        super().__init__(
+            title=f"The {nation.name}",
+            content=content,
+            size_hint=(0.6, 0.86),
+            title_color=ACCENT,
+            background="",
+            background_color=PANEL,
+            separator_color=ACCENT,
+            **kwargs,
+        )
+        close.bind(on_release=lambda *_: self.dismiss())
+
+
+class FormChoicePopup(Popup):
+    """Something new is understood, and the player decides what shape it takes."""
+
+    def __init__(self, state, on_chosen, **kwargs):
+        self.state = state
+        self.on_chosen = on_chosen
+        d = discoveries.DISCOVERIES[state.pending_choice]
+        content = BoxLayout(orientation="vertical", spacing=8, padding=[10, 8])
+        content.add_widget(
+            WrapLabel(text=f"{d.text}\n\n{muted('How should it be among our people?')}")
+        )
+        for form in d.forms:
+            btn = ThemedButton(
+                text=f"[b]{form.name}[/b]\n{muted(form.text)}",
+                markup=True,
+                size_hint_y=None,
+                height=64,
+                halign="left",
+                valign="middle",
+                padding=[12, 4],
+            )
+            btn.bind(size=lambda b, size: setattr(b, "text_size", (size[0] - 24, None)))
+            btn.bind(on_release=lambda _, f=form.id: self._choose(f))
+            content.add_widget(btn)
+        content.add_widget(Label())
+        super().__init__(
+            title=d.name,
+            content=content,
+            size_hint=(0.55, 0.7),
+            auto_dismiss=False,
+            title_color=ACCENT,
+            background="",
+            background_color=PANEL,
+            separator_color=ACCENT,
+            **kwargs,
+        )
+
+    def _choose(self, form_id):
+        game.choose_form(self.state, form_id)
+        self.dismiss()
+        self.on_chosen()
+
 
 class ChooserPopup(Popup):
-    """Pick what to give a slot's attention to this year."""
+    """Pick what to give a slot's attention to."""
 
     def __init__(self, state, slot, on_pick, **kwargs):
         self.state = state
         self.slot = slot
         self.on_pick = on_pick
-        content = BoxLayout(orientation="vertical", spacing=4, padding=[8, 8])
-        rows = BoxLayout(orientation="vertical", spacing=4, size_hint_y=None)
-        rows.bind(minimum_height=rows.setter("height"))
+        widgets = []
+        section = None
         for opt in game.options(state):
-            rows.add_widget(self._row(opt))
-        scroll = ScrollView(do_scroll_x=False)
-        scroll.add_widget(rows)
-        content.add_widget(scroll)
+            if opt.kind != section:
+                section = opt.kind
+                widgets.append(WrapLabel(text=heading(SECTIONS[section]), font_size=14))
+            widgets.append(self._row(opt))
+        content = BoxLayout(orientation="vertical", spacing=4, padding=[8, 8])
+        content.add_widget(_scrolling(widgets))
         bottom = BoxLayout(size_hint_y=None, height=44, spacing=8)
         clear = ThemedButton(text="Leave this free")
         clear.bind(on_release=lambda *_: self._pick(None))
@@ -129,7 +255,7 @@ class ChooserPopup(Popup):
         bottom.add_widget(close)
         content.add_widget(bottom)
         super().__init__(
-            title=f"Your attention this year ({slot + 1} of {len(state.plan)})",
+            title=f"Your attention ({slot + 1} of {len(state.plan)})",
             content=content,
             size_hint=(0.62, 0.86),
             title_color=ACCENT,
@@ -141,17 +267,21 @@ class ChooserPopup(Popup):
 
     def _row(self, opt):
         state = self.state
+        nation = state.nation
         taken_elsewhere = opt.key in state.plan and state.plan.index(opt.key) != self.slot
         can = game.affordable(state, opt, self.slot) and not taken_elsewhere
-        payer = budget_for(state, state.player, opt.action)
-        source = "treasury" if payer is state.nation.treasury else "own"
-        cost = cost_text(opt.cost) + (
-            f" ({source})" if opt.cost and state.player.station == "ruler" else ""
-        )
-        name = f"[b]{opt.action.name}[/b]"
-        if opt.obligation:
+        cost = cost_text(opt.cost, nation)
+        if opt.cost and state.player.station == "leader":
+            cost += " (common)" if opt.scope == "people" else " (yours)"
+        if opt.kind == "continue":
+            cost = f"{years_text(opt.years, about=opt.project.kind == 'pursue')} more  ·  {cost}"
+        elif opt.kind == "project":
+            about = opt.project.definition.id == "pursue"
+            cost = f"{years_text(opt.years, about=about)}  ·  {cost} a year"
+        name = f"[b]{opt.name}[/b]"
+        if opt.kind == "obligation":
             name = f"[color={ACCENT_HEX}]{name}[/color]  {muted(opt.blurb)}"
-        detail = muted(f"{opt.action.text}  ·  {cost}")
+        detail = muted(f"{opt.text}  ·  {cost}")
         if taken_elsewhere:
             detail += muted("  ·  already planned")
         btn = ThemedButton(
@@ -161,9 +291,11 @@ class ChooserPopup(Popup):
             height=58,
             halign="left",
             valign="middle",
-            padding=[12, 4],
+            padding=[12, 6],
             disabled=not can,
         )
+        # grow to fit however many lines the text wraps to
+        btn.bind(texture_size=lambda b, ts: setattr(b, "height", max(52, ts[1] + 14)))
         # inclinations are felt, not labelled: what you lean toward reads warmer, what
         # goes against the grain reads dimmer
         if opt.pull > PULL_TINT:
@@ -181,10 +313,11 @@ class ChooserPopup(Popup):
 
 
 class YearPanel(BoxLayout):
-    def __init__(self, on_end_year, **kwargs):
+    def __init__(self, on_end_year, on_auto, **kwargs):
         super().__init__(orientation="vertical", spacing=6, padding=[14, 12], **kwargs)
         fill_background(self, PANEL)
         self.state = None
+        self.notice = ""
         self.year_label = WrapLabel(text="", font_size=20)
         self.add_widget(self.year_label)
         self.events_label = _section(self, "This year")
@@ -205,9 +338,14 @@ class YearPanel(BoxLayout):
             self.slot_buttons.append(btn)
         self.left_label = WrapLabel(text="", font_size=13)
         self.add_widget(self.left_label)
-        self.end_button = AccentButton(text="End the Year", size_hint_y=None, height=44, bold=True)
+        buttons = BoxLayout(size_hint_y=None, height=44, spacing=8)
+        self.end_button = AccentButton(text="End the Year", bold=True)
         self.end_button.bind(on_release=lambda *_: on_end_year())
-        self.add_widget(self.end_button)
+        self.auto_button = ThemedButton(text="Let the years pass")
+        self.auto_button.bind(on_release=lambda *_: on_auto())
+        buttons.add_widget(self.end_button)
+        buttons.add_widget(self.auto_button)
+        self.add_widget(buttons)
         self.add_widget(WrapLabel(text=heading("Chronicle")))
         self.chronicle = WrapLabel(text="", font_size=13)
         scroll = ScrollView(do_scroll_x=False)
@@ -216,6 +354,7 @@ class YearPanel(BoxLayout):
 
     def refresh(self, state):
         self.state = state
+        nation = state.nation
         self.year_label.text = heading(f"Year {state.year}")
         if state.events:
             self.events_label.text = "\n".join(f"• {e.text}" for e in state.events)
@@ -225,26 +364,43 @@ class YearPanel(BoxLayout):
             key = state.plan[i] if i < len(state.plan) else None
             opt = game.option_for(state, key) if key else None
             if opt:
-                mark = f"[color={ACCENT_HEX}]•[/color] " if opt.obligation else ""
-                btn.text = f"{mark}{opt.action.name}"
+                mark = f"[color={ACCENT_HEX}]•[/color] " if opt.kind == "obligation" else ""
+                text = f"{mark}{opt.name}"
+                if opt.kind == "continue":
+                    p = opt.project
+                    text += muted(f"  ·  year {p.years_done + 1}")
+                elif opt.kind == "project":
+                    text += muted("  ·  new")
+                btn.text = text
                 btn.color = TEXT
             else:
                 btn.text = "— free —"
                 btn.color = MUTED
-        treasury, household = game.remaining_budget(state)
-        if state.player.station == "ruler":
-            left = f"Treasury after plans: {budget_text(treasury)}"
+        stores, own = game.remaining_budget(state)
+        if state.player.station == "leader":
+            left = f"Common stores after plans: {budget_text(stores, nation)}\n"
         else:
-            left = f"Left after plans: {budget_text(household)}"
+            left = ""
+        left += f"Your family after plans: {budget_text(own, nation)}"
+        lines = [muted(left)]
         unmet = [
             e
             for i, e in enumerate(state.events)
-            if e.obligation and f"event:{i}" not in state.plan and e.obligation not in state.plan
+            if e.obligation
+            and f"event:{i}" not in state.plan
+            and e.obligation not in state.plan
+            and not any(k in state.plan for k in e.data.get("also", []))
         ]
         if unmet:
-            left += f"\n[color={ACCENT_HEX}]Something is expected of you this year.[/color]"
-        self.left_label.text = muted(left) if not unmet else left
+            lines.append(f"[color={ACCENT_HEX}]Something is expected of you this year.[/color]")
+        if self.notice:
+            lines.append(f"[color={ACCENT_HEX}]{self.notice}[/color]")
+        self.left_label.text = "\n".join(lines)
         self.chronicle.text = "\n".join(reversed(state.log[-CHRONICLE_LENGTH:]))
+
+    def set_running(self, running):
+        self.auto_button.text = "Stop" if running else "Let the years pass"
+        self.end_button.disabled = running
 
     def open_chooser(self, slot):
         if self.state is not None:
@@ -259,6 +415,8 @@ class GameView(BoxLayout):
         self.state = None
         self.on_life_ended = on_life_ended
         self.on_saved = on_saved
+        self.auto_event = None
+        self.choice_popup = None
         self.character = CharacterPanel(size_hint_x=0.27)
         self.add_widget(self.character)
         centre = BoxLayout(orientation="vertical", size_hint_x=0.43, padding=[4, 8], spacing=4)
@@ -267,53 +425,112 @@ class GameView(BoxLayout):
         self.tile_label = WrapLabel(text="", font_size=13, color=TEXT)
         centre.add_widget(self.tile_label)
         self.add_widget(centre)
-        self.year = YearPanel(on_end_year=self.end_year, size_hint_x=0.30)
+        self.year = YearPanel(on_end_year=self.end_year, on_auto=self.toggle_auto, size_hint_x=0.30)
         self.add_widget(self.year)
 
     def set_state(self, state):
+        self.stop_auto()
         self.state = state
+        self.year.notice = ""
         self.map_view.set_map(game_map(state))
         self.refresh()
 
     def refresh(self):
         state = self.state
-        settlements = [
-            (s.col, s.row, s.population, s.is_capital) for s in state.settlements.values()
+        settlements = [(s.col, s.row, s.population, s.is_seat) for s in state.settlements.values()]
+        home = state.settlement(state.player.settlement_id) or state.seat
+        others = [
+            (n.territory, (n.col, n.row), n.population) for n in state.neighbours.values() if n.met
         ]
-        home = state.settlement(state.player.settlement_id)
-        self.map_view.set_realm(state.nation.territory, settlements, home=(home.col, home.row))
+        self.map_view.set_realm(
+            state.nation.territory, settlements, home=(home.col, home.row), others=others
+        )
         self.character.refresh(state)
         self.year.refresh(state)
         if self.map_view.selected_tile:
             self.on_tile_selected(self.map_view.selected_tile)
         else:
             self.tile_label.text = muted("Click the map to look at a place.")
+        if state.pending_choice and not state.life_over:
+            self.ask_form()
+
+    def ask_form(self):
+        if self.choice_popup is not None:
+            return
+        self.stop_auto()
+        self.choice_popup = FormChoicePopup(self.state, on_chosen=self._form_chosen)
+        self.choice_popup.open()
+
+    def _form_chosen(self):
+        self.choice_popup = None
+        self.on_saved(self.state)
+        self.refresh()
 
     def on_tile_selected(self, tile):
         state = self.state
-        here = next(
-            (s for s in state.settlements.values() if (s.col, s.row) == (tile["q"], tile["r"])),
-            None,
-        )
-        inside = [tile["q"], tile["r"]] in state.nation.territory
-        where = "within the realm" if inside else "beyond the borders"
+        cell = (tile["q"], tile["r"])
+        here = next((s for s in state.settlements.values() if (s.col, s.row) == cell), None)
         if here:
-            works = ", ".join(f"{k} {v}" for k, v in sorted(here.works.items()) if v) or "none"
-            kind = "the capital" if here.is_capital else "a town"
+            works = ", ".join(
+                WORK_NAMES.get(k, k) + (f" ×{v}" if v > 1 else "")
+                for k, v in sorted(here.works.items())
+                if v
+            )
+            kind = "where the leader lives" if here.is_seat else f"a {here.kind}"
             self.tile_label.text = (
                 f"[b]{here.name}[/b], {kind}  ·  {tile['biome']}\n"
-                f"{population_text(here.population)} people  ·  harvest "
-                f"{harvest_word(here.food_balance, here.population)}  ·  "
-                f"{stability_word(here.stability)}, {prosperity_word(here.prosperity)}\n"
-                + muted(f"Works: {works}")
+                f"{population_text(here.population)} people  ·  food: "
+                f"{food_word(here.food_balance, here.population)}  ·  "
+                f"{cohesion_word(here.cohesion)}, {plenty_word(here.plenty)}"
+                + (f"\n{muted('They have ' + works)}" if works else "")
+            )
+            return
+        if list(cell) in state.nation.territory:
+            self.tile_label.text = f"{tile['biome']}  ·  " + muted("our people's land")
+            return
+        owner = next(
+            (n for n in state.neighbours.values() if n.met and list(cell) in n.territory), None
+        )
+        if owner:
+            self.tile_label.text = (
+                f"{tile['biome']}  ·  land of the {owner.name}, "
+                f"{muted(relation_word(owner.relations))}"
             )
         else:
-            self.tile_label.text = f"{tile['biome']}  ·  " + muted(where)
+            self.tile_label.text = f"{tile['biome']}  ·  " + muted("land we do not know")
 
     def end_year(self):
+        if self.state.pending_choice:
+            self.ask_form()
+            return None
         report = game.end_year(self.state)
         self.on_saved(self.state)
+        self.year.notice = "  ".join(report.interrupts)
         if report.life_ended:
+            self.stop_auto()
             self.on_life_ended(self.state)
         else:
             self.refresh()
+        return report
+
+    # --- letting the years pass -------------------------------------------------
+
+    def toggle_auto(self):
+        if self.auto_event is not None:
+            self.stop_auto()
+        else:
+            self.year.notice = ""
+            self.auto_event = Clock.schedule_interval(lambda dt: self.auto_step(), AUTO_DELAY)
+            self.year.set_running(True)
+
+    def stop_auto(self):
+        if self.auto_event is not None:
+            self.auto_event.cancel()
+            self.auto_event = None
+        self.year.set_running(False)
+
+    def auto_step(self):
+        """One year of letting the years pass; stops when something needs the player."""
+        report = self.end_year()
+        if report is None or report.interrupts or report.life_ended:
+            self.stop_auto()

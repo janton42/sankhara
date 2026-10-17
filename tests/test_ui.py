@@ -2,10 +2,11 @@
 
 from kivy.uix.label import Label
 
-from sankhara.sim import game
+from sankhara.sim import discoveries, game
 from sankhara.ui import words
-from sankhara.ui.game_view import ChooserPopup, GameView
+from sankhara.ui.game_view import ChooserPopup, FormChoicePopup, GameView, KnowledgePopup
 from sankhara.ui.screens.life import LifeScreen
+from sankhara.ui.screens.main_menu import ABOUT_TEXT
 
 
 def make_view():
@@ -23,7 +24,7 @@ def all_text(widget):
     return "\n".join(texts)
 
 
-def test_game_view_shows_the_player_and_realm():
+def test_game_view_shows_the_player_and_their_people():
     view, _ = make_view()
     state = view.state
     text = all_text(view)
@@ -62,7 +63,8 @@ def test_chooser_lists_every_option():
     popup = ChooserPopup(view.state, 0, on_pick=lambda: None)
     text = all_text(popup.content)
     for opt in game.options(view.state):
-        assert opt.action.name in text
+        assert opt.name in text
+    assert "Take on something lasting" in text
 
 
 def test_hidden_ideas_never_appear_on_screen():
@@ -77,11 +79,59 @@ def test_hidden_ideas_never_appear_on_screen():
         assert word not in text
 
 
+def test_letting_the_years_pass_stops_when_needed():
+    view, ended = make_view()
+    state = view.state
+    start = state.year
+    view.toggle_auto()
+    assert view.auto_event is not None
+    for _ in range(60):
+        if view.auto_event is None:
+            break
+        view.auto_step()
+    assert view.auto_event is None
+    assert state.year > start
+    assert view.year.notice or ended
+
+
+def test_a_new_custom_asks_how_it_should_be():
+    view, _ = make_view()
+    state = view.state
+    d = discoveries.DISCOVERIES["gifts"]
+    state.nation.insight[d.id] = d.cost
+    state.events = []
+    view.end_year()
+    assert state.pending_choice == "gifts"
+    assert isinstance(view.choice_popup, FormChoicePopup)
+    text = all_text(view.choice_popup.content)
+    assert all(f.name in text for f in d.forms)
+    view.choice_popup._choose("binding_gifts")
+    assert state.nation.known["gifts"] == "binding_gifts"
+    assert view.choice_popup is None
+
+
+def test_what_we_know_lists_knowledge_and_peoples():
+    view, _ = make_view()
+    state = view.state
+    n = next(iter(state.neighbours.values()))
+    n.met = True
+    text = all_text(KnowledgePopup(state).content)
+    assert "Keeping fire" in text
+    assert discoveries.stirring(state)[0].hint in text
+    assert n.name in text
+
+
+def test_descriptions_keep_the_game_s_secrets():
+    text = ABOUT_TEXT.lower()
+    for word in ("win", "karma", "rebirth", "reborn"):
+        assert word not in text
+
+
 def test_words():
     assert words.health_word(90) == "hale"
     assert words.health_word(5) == "failing"
-    assert words.stability_word(10) == "in turmoil"
-    assert words.harvest_word(-50, 1000) == "hunger"
-    assert words.harvest_word(50, 1000) == "plenty"
+    assert words.cohesion_word(10) == "torn"
+    assert words.food_word(-50, 1000) == "hunger"
+    assert words.food_word(50, 1000) == "plenty"
     assert words.population_text(3200) == "3.2k"
-    assert words.cost_text({}) == "no cost"
+    assert words.years_text(3, about=True) == "about 3 years"

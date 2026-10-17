@@ -2,7 +2,7 @@ import random
 
 import pytest
 
-from sankhara.sim import game
+from sankhara.sim import discoveries, game
 
 
 @pytest.fixture
@@ -11,9 +11,13 @@ def state():
 
 
 def autoplay(state, years, seed=0):
-    """Advance a game, picking random affordable options and starting new lives."""
+    """Advance a game, picking random affordable options, choosing the shape of new customs
+    at random, and starting new lives."""
     rnd = random.Random(seed)
     for _ in range(years):
+        if state.pending_choice:
+            d = discoveries.DISCOVERIES[state.pending_choice]
+            game.choose_form(state, rnd.choice(d.forms).id)
         for slot in range(len(state.plan)):
             if state.plan[slot] is None:
                 options = [

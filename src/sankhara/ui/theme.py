@@ -15,6 +15,7 @@ TEXT = (0.93, 0.90, 0.85, 1)
 MUTED = (0.62, 0.58, 0.53, 1)
 GOOD = (0.55, 0.80, 0.45, 1)
 BAD = (0.90, 0.40, 0.35, 1)
+OTHERS = (0.45, 0.55, 0.75, 1)  # other peoples on the map
 
 ACCENT_HEX = "f59e2e"
 MUTED_HEX = "9e9487"
