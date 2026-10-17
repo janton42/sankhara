@@ -104,3 +104,23 @@ has to allow for players to lead from wherever they are. For example, the projec
 the first round when the player is the leader should still be relevant to the next character,
 like they can work on the project to build roads that the leader started, or something like
 that. The "a life begins" is a good place to keep that thread going.
+
+
+## Feedback 3
+
+The years don't run properly. The player shouldn't be forced to do all three things or explicitly
+leave an action blank. Choosing to let the years run, vs manually stepping through each year
+should have some influence on the karma. Only the events that have a pop-up window should
+force the player to choose. When a multi-year project ends, the slot should switch to empty
+and stay that way until the player takes action. Meaning - a player can run an entire life doing
+nothing at all, not even explicitly doing nothing. Even the events that require the player's
+attention should not stop the advance of years. This means there should be some time to the
+year, so that players have enough time to react and stop the advance of years, in case they
+do want to do something.
+
+The new life is better. As for the odds of becoming a leader - being born into it is okay, but
+it's not really in keeping with early civilization that has not decided hereditary leadership
+cycle. leadership should be something that is earned in a society this young, so the player
+should be able to become a leader in a given lifetime. The first round can have a random
+backstory for why the player is the leader, but the "your parent died" implies a default
+hereditary lineage of power, which I don't want.

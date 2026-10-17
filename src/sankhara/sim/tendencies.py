@@ -1,9 +1,9 @@
 """Habitual tendencies: the inclinations a character's choices build up.
 
 They are never shown. The player only feels them: actions they lean toward cost
-less and are offered first (and pre-filled as this year's habits), and actions
-against the grain cost more. Choosing an action strengthens its tags, and
-declining a habitual default weakens them, both at a fixed rate.
+less and are offered first, and actions against the grain cost more. Choosing an
+action strengthens its tags, and setting aside a project weakens them, both at a
+fixed rate.
 """
 
 TAGS = (
@@ -33,9 +33,8 @@ VALENCE = {
 }
 
 SHIFT_STEP = 0.05  # strengthening from choosing an action
-DECLINE_STEP = 0.04  # weakening from overriding a habitual default
+DECLINE_STEP = 0.04  # weakening from setting something aside
 COST_SWING = 0.3  # costs range from 70% (strong pull) to 130% (strong friction)
-DEFAULT_THRESHOLD = 0.15  # how strong a pull must be to pre-fill a slot
 CARRY = 0.8  # how much of a life's pattern carries into the next
 KARMA_SHAPING = 0.25  # how strongly karma tilts the next life's inclinations
 

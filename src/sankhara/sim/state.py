@@ -69,6 +69,7 @@ class Character:
     origin: str = ""  # the people they were born among, if not ours
     is_player: bool = False
     is_elder: bool = False
+    former_station: str = ""  # what a leader did before the people turned to them
 
     def age(self, year):
         return year - self.birth_year
@@ -192,7 +193,6 @@ class GameState:
     projects: dict[str, Project] = field(default_factory=dict)
     events: list[EventInstance] = field(default_factory=list)  # this year's
     plan: list[str | None] = field(default_factory=list)  # chosen option keys per slot
-    defaults: list[str] = field(default_factory=list)  # what habit suggested this year
     modifiers: dict[str, float] = field(default_factory=dict)  # this year's world effects
     pending_choice: str | None = None  # a discovery whose form is being settled
     pending_mode: str = ""  # "decide" (the player chooses) or "voice" (the player speaks for one)

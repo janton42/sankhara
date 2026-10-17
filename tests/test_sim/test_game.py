@@ -1,6 +1,6 @@
 import json
 
-from sankhara.sim import discoveries, game, save, tendencies
+from sankhara.sim import discoveries, game, people, save, tendencies
 from sankhara.sim.state import EventInstance, GameState
 from sankhara.sim.stations import ACTION_SLOTS, ADULT_AGE, rebirth_weights, station_title
 
@@ -9,13 +9,12 @@ def _quiet(state):
     """No events and nothing planned, so a test controls the year."""
     state.events = []
     state.plan = [None] * ACTION_SLOTS
-    state.defaults = []
 
 
 def test_new_game_starts_as_a_young_leader_of_a_small_band(state):
     player = state.player
     assert player.station == "leader"
-    assert player.age(state.year) == 20
+    assert 22 <= player.age(state.year) <= 30
     assert state.nation.leader_id == player.id
     assert 100 < state.total_population() < 1500
     assert len(state.settlements) == 3
@@ -23,8 +22,19 @@ def test_new_game_starts_as_a_young_leader_of_a_small_band(state):
     assert set(state.nation.known) == set(discoveries.START_KNOWN)
     assert discoveries.stirring(state)
     assert len(state.neighbours) == 3 and not any(n.met for n in state.neighbours.values())
-    assert sum(1 for c in state.living() if c.is_elder) == 4
-    assert len(state.plan) == ACTION_SLOTS
+    assert sum(1 for c in state.living() if c.is_elder) >= 4
+    assert state.plan == [None] * ACTION_SLOTS  # nothing is chosen for the player
+
+
+def test_the_first_leader_earned_it():
+    """Leading is not handed down: the first life's story is of something they did."""
+    for seed in range(12):
+        s = game.new_game(seed=seed)
+        story = s.log[0].lower()
+        assert "mother" not in story and "father" not in story
+        assert "you" in story
+        player = s.player
+        assert player.mother_id is None or s.character(player.mother_id).station != "leader"
 
 
 def test_there_is_no_money_or_trade_goods_at_the_start(state):
@@ -165,25 +175,58 @@ def test_how_leaders_are_chosen_can_change(state):
     assert station_title(state.player, state.nation) == "Chief"
 
 
-def test_habit_prefills_slots(state):
+def test_nothing_is_chosen_for_the_player(state):
     state.player.tendencies = {t: -0.5 for t in tendencies.TAGS}
     state.player.tendencies["generous"] = 1.0
     game.begin_year(state)
-    assert "share_food" in state.defaults or "open_stores" in state.defaults
-    state.player.tendencies = {t: 0.0 for t in tendencies.TAGS}
-    game.begin_year(state)
-    assert state.defaults == []
+    assert state.plan == [None] * ACTION_SLOTS
 
 
-def test_choosing_strengthens_and_overriding_habit_weakens(state):
+def test_choosing_strengthens_inclinations(state):
     player = state.player
     player.tendencies = {t: 0.0 for t in tendencies.TAGS}
     _quiet(state)
     state.plan = ["call_together", None, None]
-    state.defaults = ["share_food"]
     game.end_year(state)
     assert player.tendencies["caring"] > 0
-    assert player.tendencies["generous"] < 0
+    assert player.tendencies["generous"] == 0
+
+
+def test_a_chosen_deed_is_kept_up_until_changed(state):
+    _quiet(state)
+    state.player.means.set("hands", 50)
+    assert game.choose(state, 2, "rest")
+    game.end_year(state)
+    assert state.plan[2] == "rest"
+    game.choose(state, 2, None)
+    game.end_year(state)
+    assert state.plan == [None] * ACTION_SLOTS
+
+
+def test_a_finished_work_leaves_its_slot_empty(state):
+    _quiet(state)
+    state.player.tendencies = {t: 1.0 for t in tendencies.TAGS}  # habit chooses nothing
+    assert game.choose(state, 0, "new:teach_young:")
+    for _ in range(12):
+        state.player.means.set("hands", 10)
+        game.end_year(state)
+        if not state.projects_of(state.player_id):
+            break
+    assert not state.projects_of(state.player_id)
+    assert state.plan[0] is None
+
+
+def test_letting_the_years_slip_by_idle_weighs_on_a_life():
+    def drift(attended, plan):
+        s = game.new_game(seed=5)
+        _quiet(s)
+        s.plan = list(plan)
+        before = s.soul.karma
+        game.end_year(s, attended=attended)
+        return s.soul.karma - before
+
+    idle = [None] * ACTION_SLOTS
+    assert drift(True, idle) > drift(False, ["rest", None, None]) > drift(False, idle)
 
 
 def test_skipping_an_obligation_costs_karma():
@@ -226,7 +269,7 @@ def test_hidden_ideas_never_appear_in_option_text(state):
         assert "karma" not in text and "rebirth" not in text
 
 
-def test_obligations_stop_the_years_from_passing(state):
+def test_obligations_are_noticed(state):
     _quiet(state)
     seen = False
     for _ in range(40):
@@ -427,3 +470,77 @@ def test_anyone_can_speak_for_how_a_custom_should_be():
         urged += s.nation.known["gifts"] == "feasts"
         assert "urged" in line or "spoke" in line
     assert urged >= 12  # a respected voice usually carries
+
+
+def _living_leader(state):
+    leader = state.leader
+    leader.death_age = 200
+    leader.health = 90
+    return leader
+
+
+def test_the_people_can_turn_from_a_living_leader(state):
+    """Leadership is earned: someone the people look to far more can take it from a
+    leader who still lives."""
+    leader = _living_leader(state)
+    leader.is_player = False
+    state.player_id = next(c.id for c in state.living() if c.id != leader.id)
+    rival = state.player
+    rival.birth_year = state.year - 30
+    rival.is_player = True
+    rival.means.set("regard", 400)
+    leader.means.set("regard", 10)
+    for _ in range(60):
+        rival.means.set("regard", 400)
+        if people.leadership_year(state):
+            break
+    assert state.nation.leader_id == rival.id
+    assert leader.station != "leader" and leader.alive
+
+
+def test_an_old_leader_gives_way(state):
+    leader = _living_leader(state)
+    leader.birth_year = state.year - 70
+    for _ in range(60):
+        if people.leadership_year(state):
+            break
+    assert state.nation.leader_id != leader.id and leader.is_elder
+
+
+def test_a_custom_of_lineage_keeps_it_in_the_family(state):
+    discoveries.learn(state, "council", "lineage")
+    leader = _living_leader(state)
+    for c in state.living():
+        if c is not leader:
+            c.means.set("regard", 400)
+    for _ in range(30):
+        people.leadership_year(state)
+    assert state.nation.leader_id == leader.id
+
+
+def test_anyone_respected_can_ask_to_lead(state):
+    leader = _living_leader(state)
+    me = next(c for c in state.living() if c.id != leader.id and c.age(state.year) >= 20)
+    state.player.is_player = False
+    me.is_player = True
+    state.player_id = me.id
+    me.means.set("regard", 10)
+    assert "stand_forward" not in {o.key for o in game.options(state)}
+    me.means.set("regard", 300)
+    leader.means.set("regard", 5)
+    _quiet(state)
+    assert game.choose(state, 0, "stand_forward")
+    report = game.end_year(state)
+    assert state.nation.leader_id == me.id
+    assert "The people have turned to you to lead them." in report.interrupts
+
+
+def test_respected_lives_often_come_to_lead(play):
+    """Over a long game the player leads in some lives that did not begin as leader."""
+    s = game.new_game(seed=21)
+    led = set()
+    for _ in range(300):
+        play(s, 1, seed=s.year)
+        if s.player.station == "leader" and len(s.soul.lives) > 0:
+            led.add(s.player_id)
+    assert led

@@ -3,8 +3,10 @@
 A people over generations (Python 3.12, Kivy), played one life at a time: it
 starts as a small band with no farming, trade or money; each turn is a year; the
 player acts as one character with 3 attention slots (deeds or multi-year
-projects) and their role's means, and on death continues as someone new among
-the same people. Any role can shape the people through the people's works
+projects, all optional) and their role's means, and on death continues as someone
+new among the same people. The years run on a clock the player can pause; only
+pop-ups hold it. Leadership is earned, not inherited (unless the people adopt
+lineage). Any role can shape the people through the people's works
 (shared projects that outlive whoever began them) and by speaking when customs
 are settled. Buddhist ideas (karma, rebirth, saṅkhāra) are modelled but
 never named in-game, nor in the README, About text or other descriptions, and

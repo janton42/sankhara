@@ -24,7 +24,8 @@ uv sync
 uv run sankhara        # or: uv run python -m sankhara
 ```
 
-Choose **New Game**. Click a slot under *Your attention* to decide what the
-year is for, then **End the Year**, or **Let the years pass** to keep going
-until something needs you. The game saves itself every year; **Continue**
-picks up where you left off.
+Choose **New Game**, then **Let the years pass**: the years run on their own
+until you pause them, and you can change the pace. Click a slot under *Your
+attention* whenever you want to take something up; you can also leave all of
+them free. **One year** steps through a single year. The game saves itself
+every year; **Continue** picks up where you left off.

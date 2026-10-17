@@ -30,6 +30,8 @@ from sankhara.sim.people import (
     create_spouse,
     die,
     ensure_elders,
+    leadership_year,
+    make_leader,
     succeed,
     yearly_lifecycle,
 )
@@ -42,6 +44,8 @@ from sankhara.world.hexgrid import distance
 KARMA_SCALE = 0.15  # how fast a year's choices move the hidden ledger
 FORM_KARMA = 0.3  # how much choosing the shape of a custom weighs, relative to a deed
 KARMA_SPENT_AT_REBIRTH = 0.5  # share of karma used up shaping the new life
+ATTENDED_KARMA = 0.02  # a year the player stepped through themselves
+DRIFTED_KARMA = -0.02  # a year let slip by with nothing taken up
 RANGE_RADIUS = 2
 CAMPS = 3
 START_FILL = 0.42  # how full each camp's land is at the start
@@ -111,37 +115,66 @@ def new_game(seed=None):
     for d in rng.sample(discoveries.available(state), 3):
         nation.insight[d.id] = d.cost * rng.uniform(0.15, 0.35)
 
-    # the first life: a young leader, whose mother led the people before
+    # the first life: someone the people have lately come to look to
     leader = create_character(
         state,
-        "leader",
+        "hunter",
         home.id,
-        state.year - 20,
+        state.year - rng.randint(22, 30),
         tendencies=tendencies.random_tendencies(rng, 0.2),
     )
     leader.is_player = True
     leader.health = 85
-    leader.means.set("hands", STATIONS["leader"].hands)
-    nation.leader_id = leader.id
-    nation.leading_family = leader.family_name
+    leader.death_age = max(leader.death_age, leader.age(state.year) + 25)
+    leader.means.set("regard", 25)
     state.player_id = leader.id
-    mother = create_character(
-        state, "keeper", home.id, state.year - 44, gender="female", family_name=leader.family_name
-    )
-    father = create_spouse(state, mother)
-    father.birth_year = state.year - 47
-    for parent in (mother, father):
-        parent.children.append(leader.id)
-    leader.mother_id, leader.father_id = mother.id, father.id
-    die(state, mother, "a winter fever")
+    make_leader(state, leader)
+    leader.means.set("hands", STATIONS["leader"].hands)
     ensure_elders(state)
-
-    state.log.append(
-        f"[b]Year {state.year}[/b]  Your mother, who led the {nation.name}, died this winter. "
-        f"The people have turned to you, {leader.full_name}, though you are only twenty."
-    )
+    state.log.append(f"[b]Year {state.year}[/b]  " + _how_you_came_to_lead(state, leader, rng))
     begin_year(state)
     return state
+
+
+def _how_you_came_to_lead(state, leader, rng):
+    """Why the people look to the first life: a deed, never a birthright."""
+    nation = state.nation
+    old = create_character(state, "keeper", state.seat.id, state.year - rng.randint(55, 68))
+    elders = [c for c in state.living() if c.is_elder]
+    a, b = rng.sample(elders, 2)
+    stories = [
+        (
+            True,
+            f"{old.full_name}, who led the {nation.name} through many winters, has grown too "
+            f"frail to walk with the hunters. At the spring gathering the people turned to "
+            f"you, {leader.full_name}, who brought the hunters home through last year's snows.",
+        ),
+        (
+            False,
+            f"{old.full_name}, who led the {nation.name}, was killed by a bear in the autumn. "
+            f"You drove the beast off and carried {old.name} home, and since then the people "
+            f"have looked to you, {leader.full_name}, to lead them.",
+        ),
+        (
+            True,
+            f"The {nation.name} quarrelled all winter, the families of {a.family_name} and "
+            f"{b.family_name} at each other's fires. When you, {leader.full_name}, settled "
+            f"it, {old.full_name} gave way and the people turned to you to lead them.",
+        ),
+        (
+            True,
+            f"When the springs dried last summer, you found water beyond the ridge and led the "
+            f"people to it. {old.full_name}, who had led them, gave way gladly, and the "
+            f"{nation.name} now look to you, {leader.full_name}.",
+        ),
+    ]
+    lives, text = rng.choice(stories)
+    if lives:
+        old.is_elder = True
+        old.means.set("regard", 20)
+    else:
+        die(state, old, "a bear's mauling")
+    return text
 
 
 # --- the year ------------------------------------------------------------------
@@ -369,9 +402,20 @@ def choose(state, slot, key):
     return True
 
 
-def begin_year(state):
+def begin_year(state, carry=()):
+    """A new year. What the player is working on keeps its slot, and deeds they chose last
+    year are kept up if they still can be; nothing else is chosen for them.
+
+    Returns the names of deeds that could not be kept up.
+    """
     state.modifiers = {}
     state.events = generate_events(state, state.player)
+    return replan(state, [key if key in ACTIONS else None for key in carry])
+
+
+def replan(state, keys):
+    """Lay out the plan again: commitments in their slots, then whichever of `keys` still
+    make sense. Returns the names of deeds dropped."""
     state.plan = [None] * ACTION_SLOTS
     held = committed(state)
     state.commitments = {}
@@ -379,28 +423,13 @@ def begin_year(state):
         slot = slot if state.plan[slot] is None else state.plan.index(None)
         state.commitments[str(project.id)] = slot
         state.plan[slot] = f"p:{project.id}"
-    # habit fills empty slots with what this character is drawn to
-    state.defaults = []
-    for opt in options(state):
-        if None not in state.plan:
-            break
-        if (
-            opt.kind in ("obligation", "continue", "rally")
-            or opt.pull < tendencies.DEFAULT_THRESHOLD
-        ):
+    dropped = []
+    for slot, key in enumerate(keys):
+        if not key or key.startswith("p:") or state.plan[slot] is not None:
             continue
-        if choose(state, state.plan.index(None), opt.key):
-            state.defaults.append(opt.key)
-
-
-def _tags_for_key(state, key):
-    if key.startswith("new:"):
-        return projects.PROJECTS[key.split(":")[1]].tags
-    if key.startswith("join:"):
-        project = state.projects.get(key.split(":")[1])
-        return projects.PROJECTS[project.kind].tags if project else ()
-    action = ACTIONS.get(key)
-    return action.tags if action else ()
+        if not choose(state, slot, key) and key in ACTIONS:
+            dropped.append(ACTIONS[key].name)
+    return dropped
 
 
 def _work_player_project(state, project, lines, interrupts, rng):
@@ -417,13 +446,18 @@ def _work_player_project(state, project, lines, interrupts, rng):
     return projects.PROJECTS[project.kind].karma
 
 
-def end_year(state):
-    """Carry out the plan and advance the world one year."""
+def end_year(state, attended=True):
+    """Carry out the plan and advance the world one year. `attended` is False when the
+    player let the year pass rather than stepping through it."""
+    if state.life_over:
+        raise ValueError("this life is over; begin the next one first")
     rng = state.rng()
     player = state.player
     report = YearReport(state.year)
     lines, interrupts = report.lines, report.interrupts
     karma = 0.0
+    carry = list(state.plan)
+    was_leader = player.station == "leader"
 
     chosen = [(slot, option_for(state, key)) for slot, key in enumerate(state.plan) if key]
     kept = set()
@@ -469,9 +503,10 @@ def end_year(state):
         note = projects.leave(state, player, project)
         if note:
             lines.append(note)
-    for key in state.defaults:
-        if key not in state.plan:
-            tendencies.weaken(player.tendencies, _tags_for_key(state, key))
+    if attended:
+        karma += ATTENDED_KARMA
+    elif not any(state.plan):
+        karma += DRIFTED_KARMA
 
     notes, obligation_karma = resolve_events(state, state.plan)
     lines += notes
@@ -484,10 +519,12 @@ def end_year(state):
         state.pending_choice = None
         state.pending_mode = ""
 
-    was_leader = player.station == "leader"
     _world_year(state, (), lines, interrupts)
     if player.station == "leader" and not was_leader:
         interrupts.append("The people have turned to you to lead them.")
+    elif was_leader and player.station != "leader" and player.alive:
+        leader = state.leader
+        interrupts.append(f"The people now look to {leader.full_name} to lead them.")
 
     cause = age_and_health(state, player, rng)
     if cause:
@@ -505,7 +542,9 @@ def end_year(state):
     if report.life_ended:
         interrupts.insert(0, "A life has ended.")
     else:
-        begin_year(state)
+        dropped = begin_year(state, carry)
+        if dropped:
+            interrupts.append(f"You could not keep up: {', '.join(dropped).lower()}.")
         if any(e.obligation for e in state.events):
             interrupts.append("Something is expected of you.")
         if state.pending_choice:
@@ -538,9 +577,9 @@ def _world_year(state, protect, lines, interrupts):
     lines += notes
     interrupts += met
     lines += yearly_lifecycle(state, protect)
-    note = succeed(state)
-    if note:
-        lines.append(note)
+    for note in (succeed(state), leadership_year(state)):
+        if note:
+            lines.append(note)
     _orphaned_works(state, lines)
     if not protect:
         interrupts += projects.player_notes(state)
@@ -654,7 +693,7 @@ def choose_form(state, form_id):
     for project in list(state.projects.values()):
         if project.kind == "pursue" and project.target == did:
             projects.abandon(state, project)
-    begin_year(state)
+    replan(state, state.plan)
     return line
 
 

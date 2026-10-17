@@ -1,10 +1,14 @@
 """The main game screen: who you are (left), the land (centre), and your year (right)."""
 
 from kivy.clock import Clock
+from kivy.core.window import Window
+from kivy.graphics import Color, Rectangle
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.label import Label
+from kivy.uix.modalview import ModalView
 from kivy.uix.popup import Popup
 from kivy.uix.scrollview import ScrollView
+from kivy.uix.widget import Widget
 
 from sankhara.sim import discoveries, game, projects
 from sankhara.sim.people import family_of
@@ -15,6 +19,7 @@ from sankhara.ui.screens.map_view import MapScreen
 from sankhara.ui.theme import (
     ACCENT,
     ACCENT_HEX,
+    BUTTON,
     MUTED,
     PANEL,
     TEXT,
@@ -40,7 +45,11 @@ from sankhara.ui.words import (
 
 CHRONICLE_LENGTH = 60
 PULL_TINT = 0.25  # how strong an inclination must be before it shows in the chooser
-AUTO_DELAY = 0.45  # seconds between years when letting the years pass
+# how long a year lasts when the years are left to pass, in seconds
+PACES = (("unhurried", 7.0), ("steady", 3.5), ("swift", 1.5))
+NEWS_LINGER = 2.0  # a year that brought news lasts this many times longer, to give time to react
+TICK = 1 / 20
+NOTICES_SHOWN = 5
 WORK_NAMES = {
     "gathering": "a gathering place",
     "pits": "store pits",
@@ -325,12 +334,35 @@ class ChooserPopup(Popup):
             self.on_pick()
 
 
+class YearBar(Widget):
+    """A thin bar showing how much of the year has passed."""
+
+    def __init__(self, **kwargs):
+        super().__init__(size_hint_y=None, height=6, **kwargs)
+        self.value = 0.0
+        with self.canvas:
+            Color(*BUTTON)
+            self._track = Rectangle()
+            Color(*ACCENT)
+            self._fill = Rectangle()
+        self.bind(pos=self._draw, size=self._draw)
+
+    def set_value(self, value):
+        self.value = max(0.0, min(1.0, value))
+        self._draw()
+
+    def _draw(self, *_):
+        self._track.pos = self._fill.pos = self.pos
+        self._track.size = self.size
+        self._fill.size = (self.width * self.value, self.height)
+
+
 class YearPanel(BoxLayout):
-    def __init__(self, on_end_year, on_auto, **kwargs):
+    def __init__(self, on_step, on_auto, on_pace, **kwargs):
         super().__init__(orientation="vertical", spacing=6, padding=[14, 12], **kwargs)
         fill_background(self, PANEL)
         self.state = None
-        self.notice = ""
+        self.notices = []  # (year, text), newest last
         self.year_label = WrapLabel(text="", font_size=20)
         self.add_widget(self.year_label)
         self.events_label = _section(self, "This year")
@@ -352,18 +384,29 @@ class YearPanel(BoxLayout):
         self.left_label = WrapLabel(text="", font_size=13)
         self.add_widget(self.left_label)
         buttons = BoxLayout(size_hint_y=None, height=44, spacing=8)
-        self.end_button = AccentButton(text="End the Year", bold=True)
-        self.end_button.bind(on_release=lambda *_: on_end_year())
-        self.auto_button = ThemedButton(text="Let the years pass")
+        self.auto_button = AccentButton(text="Let the years pass", bold=True, size_hint_x=1.4)
         self.auto_button.bind(on_release=lambda *_: on_auto())
-        buttons.add_widget(self.end_button)
+        self.end_button = ThemedButton(text="One year")
+        self.end_button.bind(on_release=lambda *_: on_step())
+        self.pace_button = ThemedButton(text="", font_size=13)
+        self.pace_button.bind(on_release=lambda *_: on_pace())
         buttons.add_widget(self.auto_button)
+        buttons.add_widget(self.end_button)
+        buttons.add_widget(self.pace_button)
         self.add_widget(buttons)
+        self.bar = YearBar()
+        self.add_widget(self.bar)
+        self.notice_label = WrapLabel(text="", font_size=13)
+        self.add_widget(self.notice_label)
         self.add_widget(WrapLabel(text=heading("Chronicle")))
         self.chronicle = WrapLabel(text="", font_size=13)
         scroll = ScrollView(do_scroll_x=False)
         scroll.add_widget(self.chronicle)
         self.add_widget(scroll)
+
+    def add_notices(self, year, texts):
+        self.notices += [(year, t) for t in texts]
+        del self.notices[:-NOTICES_SHOWN]
 
     def refresh(self, state):
         self.state = state
@@ -408,14 +451,19 @@ class YearPanel(BoxLayout):
         ]
         if unmet:
             lines.append(f"[color={ACCENT_HEX}]Something is expected of you this year.[/color]")
-        if self.notice:
-            lines.append(f"[color={ACCENT_HEX}]{self.notice}[/color]")
         self.left_label.text = "\n".join(lines)
+        self.notice_label.text = "\n".join(
+            f"{muted(f'Year {year}')}  [color={ACCENT_HEX}]{text}[/color]"
+            for year, text in reversed(self.notices)
+        )
         self.chronicle.text = "\n".join(reversed(state.log[-CHRONICLE_LENGTH:]))
 
-    def set_running(self, running):
-        self.auto_button.text = "Stop" if running else "Let the years pass"
+    def set_running(self, running, pace):
+        self.auto_button.text = "Pause" if running else "Let the years pass"
         self.end_button.disabled = running
+        self.pace_button.text = f"Pace: {pace}"
+        if not running:
+            self.bar.set_value(0)
 
     def open_chooser(self, slot):
         if self.state is not None:
@@ -462,6 +510,10 @@ class GameView(BoxLayout):
         self.on_saved = on_saved
         self.auto_event = None
         self.choice_popup = None
+        self.pace = 1
+        self.elapsed = 0.0
+        self.year_length = PACES[self.pace][1]
+        self.resume_after_life = False
         self.character = CharacterPanel(size_hint_x=0.27)
         self.add_widget(self.character)
         centre = BoxLayout(orientation="vertical", size_hint_x=0.43, padding=[4, 8], spacing=4)
@@ -473,15 +525,25 @@ class GameView(BoxLayout):
         self.works_label = WrapLabel(text="", font_size=13)
         centre.add_widget(self.works_label)
         self.add_widget(centre)
-        self.year = YearPanel(on_end_year=self.end_year, on_auto=self.toggle_auto, size_hint_x=0.30)
+        self.year = YearPanel(
+            on_step=self.end_year,
+            on_auto=self.toggle_auto,
+            on_pace=self.change_pace,
+            size_hint_x=0.30,
+        )
         self.add_widget(self.year)
+        self.year.set_running(False, PACES[self.pace][0])
 
     def set_state(self, state):
+        resume = self.resume_after_life and self.state is state
+        self.resume_after_life = False
         self.stop_auto()
         self.state = state
-        self.year.notice = ""
+        self.year.notices = []
         self.map_view.set_map(game_map(state))
         self.refresh()
+        if resume and not state.life_over:
+            self.start_auto()
 
     def refresh(self):
         state = self.state
@@ -504,9 +566,9 @@ class GameView(BoxLayout):
             self.ask_form()
 
     def ask_form(self):
+        """A pop-up is the one thing that holds the years until the player answers."""
         if self.choice_popup is not None:
             return
-        self.stop_auto()
         self.choice_popup = FormChoicePopup(self.state, on_chosen=self._form_chosen)
         self.choice_popup.open()
 
@@ -548,14 +610,17 @@ class GameView(BoxLayout):
         else:
             self.tile_label.text = f"{tile['biome']}  ·  " + muted("land we do not know")
 
-    def end_year(self):
+    def end_year(self, attended=True):
+        if self.state.life_over:
+            return None
         if self.state.pending_choice:
             self.ask_form()
             return None
-        report = game.end_year(self.state)
+        report = game.end_year(self.state, attended=attended)
         self.on_saved(self.state)
-        self.year.notice = "  ".join(report.interrupts)
+        self.year.add_notices(report.year, report.interrupts)
         if report.life_ended:
+            self.resume_after_life = self.auto_event is not None
             self.stop_auto()
             self.on_life_ended(self.state)
         else:
@@ -563,23 +628,53 @@ class GameView(BoxLayout):
         return report
 
     # --- letting the years pass -------------------------------------------------
+    #
+    # The years run on their own until the player pauses them. News doesn't stop them;
+    # a year that brought some lasts longer, so there is time to pause and act. Only a
+    # pop-up (or the player looking into something) holds the year until it closes.
 
     def toggle_auto(self):
         if self.auto_event is not None:
             self.stop_auto()
         else:
-            self.year.notice = ""
-            self.auto_event = Clock.schedule_interval(lambda dt: self.auto_step(), AUTO_DELAY)
-            self.year.set_running(True)
+            self.start_auto()
+
+    def start_auto(self):
+        self.elapsed = 0.0
+        self.year_length = PACES[self.pace][1]
+        self.auto_event = Clock.schedule_interval(self._tick, TICK)
+        self.year.set_running(True, PACES[self.pace][0])
 
     def stop_auto(self):
         if self.auto_event is not None:
             self.auto_event.cancel()
             self.auto_event = None
-        self.year.set_running(False)
+        self.year.set_running(False, PACES[self.pace][0])
+
+    def change_pace(self):
+        self.pace = (self.pace + 1) % len(PACES)
+        self.year_length = PACES[self.pace][1]
+        self.year.set_running(self.auto_event is not None, PACES[self.pace][0])
+
+    def held(self):
+        """Something is open that the year waits for."""
+        return self.state.pending_choice is not None or any(
+            isinstance(w, ModalView) for w in Window.children
+        )
+
+    def _tick(self, dt):
+        if self.held():
+            return
+        self.elapsed += dt
+        self.year.bar.set_value(self.elapsed / self.year_length)
+        if self.elapsed >= self.year_length:
+            self.auto_step()
 
     def auto_step(self):
-        """One year of letting the years pass; stops when something needs the player."""
-        report = self.end_year()
-        if report is None or report.interrupts or report.life_ended:
-            self.stop_auto()
+        """One year passing on its own."""
+        self.elapsed = 0.0
+        report = self.end_year(attended=False)
+        pace = PACES[self.pace][1]
+        self.year_length = pace * (NEWS_LINGER if report and report.interrupts else 1)
+        self.year.bar.set_value(0)
+        return report
