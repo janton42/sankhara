@@ -226,3 +226,13 @@ class TestAssignResources(unittest.TestCase):
         self.assertEqual(len(actual_calls), len(expected_calls))
         for actual, expected in zip(actual_calls, expected_calls, strict=True):
             self.assertEqual(actual, expected)
+
+
+def test_same_seed_gives_same_map():
+    assert game_engine.generate_map(seed=7) == game_engine.generate_map(seed=7)
+
+
+def test_different_seeds_give_different_maps():
+    a = game_engine.generate_map(seed=7)
+    b = game_engine.generate_map(seed=8)
+    assert [t["biome"] for col in a for t in col] != [t["biome"] for col in b for t in col]

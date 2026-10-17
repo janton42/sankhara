@@ -29,19 +29,41 @@ def regenerate_resources(game_map):
 def process_player_actions(player, actions_taken):
     """
     Apply karma and health effects for all actions selected by the player at the end of the turn.
-    actions_taken: list of action_id performed this turn
+    actions_taken: list of action_id performed this turn (repeatable actions may appear
+    more than once, and apply once per occurrence)
+
+    Returns a list of effect dicts (name, count, health, karma, skipped) describing what
+    was applied, before clamping.
     """
+    effects = []
     for action in ACTIONS:
         action_id = action["id"]
-        if action_id in actions_taken:
+        count = actions_taken.count(action_id)
+        if count:
             # Apply positive effects for taken actions
-            player.karma += action.get("karma", 0)
-            player.state.health += action.get("health", 0)
+            health = action.get("health", 0) * count
+            karma = action.get("karma", 0) * count
+            skipped = False
         elif action.get("skippable"):
             # Apply skip penalties for skippable actions not taken
             penalty = action.get("penalty_on_skip", {})
-            player.karma += penalty.get("karma", 0)
-            player.state.health += penalty.get("health", 0)
+            health = penalty.get("health", 0)
+            karma = penalty.get("karma", 0)
+            skipped = True
+        else:
+            continue
+        player.karma += karma
+        player.state.health += health
+        effects.append(
+            {
+                "name": action["name"],
+                "count": count,
+                "health": health,
+                "karma": karma,
+                "skipped": skipped,
+            }
+        )
     # Clamp karma and health
     player.karma = max(-1, min(1, player.karma))
     player.state.health = max(0, min(100, player.state.health))
+    return effects

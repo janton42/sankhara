@@ -14,19 +14,23 @@ from sankhara.constants.config import (
 )
 
 
-def generate_perlin_noise(width, height, params):
+def generate_perlin_noise(width, height, params, seed=0):
     scale = params["scale"]
     octaves = params["octaves"]
     persistence = params["persistence"]
     lacunarity = params["lacunarity"]
-    seed = params["seed"]
+    # The seed picks where in the (periodic) noise field this map is sampled.
+    rng = random.Random(seed)
+    offset_x, offset_y = rng.uniform(0, 256), rng.uniform(0, 256)
 
+    # Sample at each hex's true position (odd rows shifted half a tile, rows
+    # sqrt(3)/2 apart) so features aren't stretched by the offset layout.
     return np.array(
         [
             [
                 pnoise2(
-                    (x + seed) / scale,
-                    (y + seed) / scale,
+                    (x + 0.5 * (y & 1) + offset_x) / scale,
+                    (y * 0.866 + offset_y) / scale,
                     octaves=octaves,
                     persistence=persistence,
                     lacunarity=lacunarity,
@@ -70,13 +74,13 @@ def assign_biome(elevation, moisture):
     return biome
 
 
-def assign_resources(biome):
+def assign_resources(biome, rng=random):
     base = BIOME_RESOURCE_BASELINES.get(biome, {})
     resources = {}
     for res in RESOURCE_TYPES:
         val = base.get(res, 0)
         variation = val * RESOURCE_VARIATION_PERCENTAGE
-        resources[res] = val + random.uniform(-variation, variation)
+        resources[res] = val + rng.uniform(-variation, variation)
     return resources
 
 

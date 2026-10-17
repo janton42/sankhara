@@ -14,9 +14,19 @@ def coin_flip():
     return 1 if random.random() < 0.5 else 0
 
 
-def generate_map():
-    elevation_noise = normalize(generate_perlin_noise(MAP_WIDTH, MAP_HEIGHT, ELEVATION_NOISE))
-    moisture_noise = normalize(generate_perlin_noise(MAP_WIDTH, MAP_HEIGHT, MOISTURE_NOISE))
+def new_seed():
+    return random.randrange(1_000_000)
+
+
+def generate_map(seed=None):
+    """Build a MAP_WIDTH x MAP_HEIGHT map; the same seed gives the same terrain."""
+    if seed is None:
+        seed = new_seed()
+    elevation_noise = normalize(generate_perlin_noise(MAP_WIDTH, MAP_HEIGHT, ELEVATION_NOISE, seed))
+    moisture_noise = normalize(
+        generate_perlin_noise(MAP_WIDTH, MAP_HEIGHT, MOISTURE_NOISE, seed + 1)
+    )
+    rng = random.Random(seed)
 
     game_map = []
     tile_id = 0
@@ -27,7 +37,7 @@ def generate_map():
             moist_val = moisture_noise[q][r]
             biome = assign_biome(elev_val, moist_val)
             abbr = map_biome_abbr(biome)
-            resources = assign_resources(biome)
+            resources = assign_resources(biome, rng)
             tile_id += 1
             tile = {
                 "id": tile_id,
