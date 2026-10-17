@@ -372,6 +372,28 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#how-the-design-maps-to-code" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How the design maps to code
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#simulation-modules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Simulation modules
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#world-generation" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -387,28 +409,6 @@
     <span class="md-ellipsis">
       
         Hex grid
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#day-loop" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Day loop
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#stubs" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Stubs
       
     </span>
   </a>
@@ -477,6 +477,28 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#how-the-design-maps-to-code" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How the design maps to code
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#simulation-modules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Simulation modules
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#world-generation" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -492,28 +514,6 @@
     <span class="md-ellipsis">
       
         Hex grid
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#day-loop" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Day loop
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#stubs" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Stubs
       
     </span>
   </a>
@@ -541,7 +541,10 @@
 
 
 <h1 id="architecture">Architecture<a class="headerlink" href="#architecture" title="Permanent link">&para;</a></h1>
-<p>All code lives in the <code>sankhara</code> package under <code>src/</code>.</p>
+<p>All code lives in the <code>sankhara</code> package under <code>src/</code>. The game is split into a
+pure-Python <strong>simulation</strong> (<code>sankhara.sim</code>, no Kivy, fully unit-tested and
+saveable) and a <strong>UI</strong> (<code>sankhara.ui</code>) that only reads state and calls a handful
+of game functions.</p>
 <table>
 <thead>
 <tr>
@@ -551,65 +554,122 @@
 </thead>
 <tbody>
 <tr>
-<td><code>sankhara.constants</code></td>
-<td><code>config.py</code>: every tunable value — noise parameters, map size, biome thresholds and resource baselines, player actions, culture groups.</td>
+<td><code>sankhara.sim</code></td>
+<td>The game: state, rules, the yearly loop, lives and save/load.</td>
 </tr>
 <tr>
 <td><code>sankhara.world</code></td>
-<td>Map generation (<code>map_gen.py</code>), hex-grid math (<code>hexgrid.py</code>) and resource extraction/regeneration (<code>resources.py</code>).</td>
+<td>Map generation (<code>map_gen.py</code>) and hex-grid math (<code>hexgrid.py</code>).</td>
 </tr>
 <tr>
 <td><code>sankhara.core</code></td>
-<td><code>game_engine.generate_map(seed)</code> builds the map; <code>day_plan</code> enforces the 24-hour action budget; <code>turn_manager</code> applies end-of-day resource regeneration and action effects.</td>
+<td><code>game_engine.generate_map(seed)</code> builds the terrain.</td>
 </tr>
 <tr>
 <td><code>sankhara.entities</code></td>
-<td><code>Player</code>, <code>PlayerState</code>, <code>Family</code> (lineage) and name generation.</td>
+<td>Name generation per culture (<code>namer.py</code>).</td>
 </tr>
 <tr>
 <td><code>sankhara.ui</code></td>
-<td>Kivy widgets: the info/action panel (<code>ui_kivy.py</code>), screens (menu, map view, game over), text formatters (<code>screens/info_panel.py</code>) and the palette, biome colours and styled widgets (<code>theme.py</code>).</td>
+<td>Kivy screens: menu, game view, between-lives screen; <code>theme.py</code> palette and widgets; <code>words.py</code> turns numbers into the words the player sees.</td>
+</tr>
+<tr>
+<td><code>sankhara.constants</code></td>
+<td><code>config.py</code>: map size, noise, biome thresholds and resources, culture groups.</td>
 </tr>
 <tr>
 <td><code>sankhara.app</code></td>
-<td><code>SankharaApp</code> and the screen manager wiring; <code>main()</code> is the entry point.</td>
+<td><code>SankharaApp</code>: screen flow and autosave.</td>
 </tr>
 </tbody>
 </table>
+<h2 id="how-the-design-maps-to-code">How the design maps to code<a class="headerlink" href="#how-the-design-maps-to-code" title="Permanent link">&para;</a></h2>
+<p>The design lives in <a href="../concepts/">Concepts</a>. Milestone 1 implements the core
+loop:</p>
+<table>
+<thead>
+<tr>
+<th>Design</th>
+<th>Implementation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>One turn is one year</td>
+<td><code>game.end_year()</code> advances the world one year, then <code>begin_year()</code> sets up the next.</td>
+</tr>
+<tr>
+<td>2–3 action slots of personal attention</td>
+<td><code>stations.ACTION_SLOTS = 3</code>; <code>game.options()</code>, <code>choose()</code>.</td>
+</tr>
+<tr>
+<td>A coarse budget the actions spend</td>
+<td><code>Budget(food, goods, coin)</code>. Rulers spend the national treasury; everyone else their household (<code>actions.budget_for</code>).</td>
+</tr>
+<tr>
+<td>Karma only on the action layer</td>
+<td>Each <code>Action</code> has a hidden <code>karma</code> value for its intention; skipped obligations subtract <code>EventInstance.penalty</code>. Outcomes never touch it. Stored on <code>Soul.karma</code>, clamped to [-1, 1].</td>
+</tr>
+<tr>
+<td>Events, some random, some state-driven, not fair</td>
+<td><code>events.EVENTS</code>: drought, plague, famine (when settlements go hungry), unrest (low stability), sick relatives, strangers… Meeting an obligation guarantees nothing.</td>
+</tr>
+<tr>
+<td>Lives of 20–50 turns, random death age</td>
+<td><code>Character.death_age</code> is hidden: 16 + 20..50. Health can end a life sooner.</td>
+</tr>
+<tr>
+<td>Rebirth in the same nation, random station</td>
+<td><code>game.begin_next_life()</code>: station drawn by <code>Station.rebirth_weight</code>; childhood is fast-forwarded to age 16.</td>
+</tr>
+<tr>
+<td>Karma shapes conditions, not rank</td>
+<td>At rebirth karma tilts carried-over tendencies (<code>tendencies.carry_into_next_life</code>), health, <code>fortune</code> (income), <code>family_stability</code> (family misfortune), parents' warmth, and which existing couple you are born to. Half of it is spent doing so.</td>
+</tr>
+<tr>
+<td>Tendencies, felt not shown</td>
+<td><code>tendencies.py</code>: choosing an action strengthens its tags; declining a habitual default weakens them. Inclinations change costs (±30%), the order options appear in, their tint in the chooser, and which actions are pre-filled each year.</td>
+</tr>
+<tr>
+<td>NPCs, same model simplified</td>
+<td><code>npc.py</code>: tracked adults choose station actions by tendency (rulers also by the realm's needs). Rulers' and nobles' choices act on the world. Upbringing and counsel pull others' tendencies toward the player's.</td>
+</tr>
+<tr>
+<td>Succession and lineage</td>
+<td><code>people.succeed()</code>: eldest child, then sibling; if the line fails, an advisor founds a new house.</td>
+</tr>
+<tr>
+<td>No win condition</td>
+<td>The game runs until the player stops; it autosaves every year.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="simulation-modules">Simulation modules<a class="headerlink" href="#simulation-modules" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong><code>state.py</code></strong>: dataclasses (<code>GameState</code>, <code>Nation</code>, <code>Settlement</code>, <code>Character</code>, <code>Soul</code>, <code>Budget</code>, <code>EventInstance</code>) with <code>to_dict</code>/<code>from_dict</code>. The RNG state is saved too, so a loaded game plays on identically.</li>
+<li><strong><code>game.py</code></strong>: founding a nation (capital on fertile interior land, a realm of radius 2, a few villages, a newly crowned ruler as the first life), the yearly loop, death and the next life.</li>
+<li><strong><code>actions.py</code></strong>: about 45 actions across six stations, plus generic and obligation-only actions. Each has a cost, tags, hidden karma and an effect function.</li>
+<li><strong><code>events.py</code></strong>: event definitions, yearly generation, obligation resolution.</li>
+<li><strong><code>nation.py</code></strong>: settlement economy (harvest falls as land fills up, taxes, hunger, growth), treasury upkeep and spoilage, drift of stability and prosperity, learning and arts with diminishing returns, household income and upkeep.</li>
+<li><strong><code>people.py</code></strong>: creating characters, families, ageing, marriage and births (tracked only for the ruler's line and the player's family), succession, keeping the court staffed.</li>
+<li><strong><code>stations.py</code></strong>, <strong><code>tendencies.py</code></strong>, <strong><code>npc.py</code></strong>, <strong><code>world.py</code></strong> (cached map per seed, fertility), <strong><code>save.py</code></strong> (JSON).</li>
+</ul>
 <h2 id="world-generation">World generation<a class="headerlink" href="#world-generation" title="Permanent link">&para;</a></h2>
 <ol>
-<li>Perlin noise (<code>noise</code> library) produces elevation and moisture grids of
-   <code>MAP_WIDTH × MAP_HEIGHT</code>, normalised to <code>[0, 1]</code>. Each new game picks a
-   random seed (shown in the panel header); the same seed always gives the
-   same map. Noise is sampled at each hex's true position so features aren't
-   stretched by the offset layout.</li>
+<li>Perlin noise produces elevation and moisture grids of <code>MAP_WIDTH × MAP_HEIGHT</code>,
+   sampled at each hex's true position and normalised to <code>[0, 1]</code>. The game
+   seed fixes the map.</li>
 <li>Each value is bucketed by <code>ELEVATION_THRESHOLDS</code> / <code>MOISTURE_THRESHOLDS</code>;
    the pair names the biome (e.g. <code>"Hill Forest"</code>).</li>
-<li>Resources are seeded from <code>BIOME_RESOURCE_BASELINES</code> with ±
-   <code>RESOURCE_VARIATION_PERCENTAGE</code> random variation.</li>
+<li>Resources are seeded from <code>BIOME_RESOURCE_BASELINES</code>; a tile's fertility
+   (plant food, animal food, fresh water) drives harvests.</li>
 </ol>
-<p>The map is a list of columns of tile dicts with <code>id</code>, <code>q</code> (column), <code>r</code> (row),
-<code>elevation</code>, <code>moisture</code>, <code>biome</code>, <code>abbr</code> and <code>resources</code>.</p>
 <h2 id="hex-grid">Hex grid<a class="headerlink" href="#hex-grid" title="Permanent link">&para;</a></h2>
 <p><code>world/hexgrid.py</code> is pure math for a pointy-top grid in "odd-r" offset
-coordinates (odd rows shifted half a hex right). <code>tile_center</code>,
-<code>pixel_to_tile</code> (exact, via cube rounding), <code>hex_corners</code> and <code>fit_size</code> are
-all the map view needs: it fits the map to its widget, draws row 0 at the top,
-and hit-tests clicks. Biome fill colours come from <code>theme.biome_color</code>, which
-derives hue from the moisture band and shading from the elevation band.</p>
-<h2 id="day-loop">Day loop<a class="headerlink" href="#day-loop" title="Permanent link">&para;</a></h2>
-<p>Each turn is a day. The player fills up to four action slots; <code>day_plan</code>
-only offers actions that fit in the hours left (24 per day) and respects
-non-repeatable actions. On <strong>End Day</strong>, <code>process_player_actions()</code> applies each
-taken action's karma and health effects (once per occurrence), applies skip
-penalties for skippable actions not taken, clamps karma to <code>[-1, 1]</code> and health
-to <code>[0, 100]</code>, and returns the effects, which the panel writes to its log.
-<code>regenerate_resources()</code> regrows renewable resources toward their biome
-maximum. When health reaches 0 the game-over screen shows a summary of the
-life.</p>
-<h2 id="stubs">Stubs<a class="headerlink" href="#stubs" title="Permanent link">&para;</a></h2>
-<p><code>core/karma.py</code>, <code>entities/npc.py</code>, <code>world/terrain.py</code> and <code>world/biomes.py</code>
-are empty placeholders for planned features.</p>
+coordinates: centres, exact pixel-to-tile picking, corners, neighbours,
+distance and fitting a map to a box. The map view dims land outside the realm,
+outlines its border, marks settlements (capital in saffron) and outlines the
+player's home.</p>
 
 
 

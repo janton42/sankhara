@@ -473,23 +473,28 @@
 
 
 <h1 id="sankhara">Sankhara<a class="headerlink" href="#sankhara" title="Permanent link">&para;</a></h1>
-<p>Sankhara is a turn-based world game played on a procedurally generated hex map.
-You are born into a family on a tile of the world, act each turn, and those
-actions shape your health and karma — and, eventually, what you are reborn as.</p>
-<p>The name comes from the Pali <em>saṅkhāra</em>: the mental formations and volitional
-impulses that, in Buddhist thought, condition what comes next. See
-<a href="concepts/">Concepts</a>.</p>
+<p>Sankhara is a nation builder without wars, lived one person at a time. Each
+turn is a year. You act as one character, with a few slots of attention and
+whatever budget your station gives you: the treasury if you rule, your
+household if you farm, trade or teach. Events arrive, some of them asking
+something of you. When you die, the nation carries on and you begin again
+somewhere within it.</p>
+<p>The ideas behind it are in <a href="concepts/">Concepts</a>; how they are built is in
+<a href="architecture/">Architecture</a>.</p>
 <div class="admonition note">
 <p class="admonition-title">Status</p>
-<p>Early prototype. Map generation, resources, a basic player/family model and
-turn actions exist; karma, NPCs and terrain are still stubs.</p>
+<p>Milestone 1 (the core loop) is playable: yearly turns, six stations,
+events and obligations, lives, succession and continuing in a new life.
+Research, policy and territorial growth come in Milestone 2; detailed
+NPC relationships and court politics in Milestone 3.</p>
 </div>
 <h2 id="running">Running<a class="headerlink" href="#running" title="Permanent link">&para;</a></h2>
 <pre><code class="language-bash">uv sync
 uv run sankhara        # or: uv run python -m sankhara
 </code></pre>
-<p>From the main menu choose <strong>New Game</strong>, click a tile to inspect it, and use the
-info panel to start a life and take actions.</p>
+<p>Choose <strong>New Game</strong>. Click a slot under <em>Your attention</em> to decide what the
+year is for, then <strong>End the Year</strong>. The game saves itself every year;
+<strong>Continue</strong> picks up where you left off.</p>
 
 
 
