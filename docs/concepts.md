@@ -1,126 +1,157 @@
 # Concepts
 
-The game's mechanics are meant to model a handful of Buddhist ideas. This page
-is a skeleton to be expanded from the original design conversation.
+The design of Sankhara. How each part is built is in
+[Architecture](architecture.md).
 
-## Saṅkhāra
+## Premise
 
-Mental formations or volitional impulses: one of the five aggregates and the
-second link of dependent origination. In the game, the accumulated effect of a
-character's choices.
+A simulation of one people over many generations, played one life at a time.
+It is a nation builder in the spirit of Civilization's development (ideas that
+take years, plans that run until something interrupts them) and of Europa
+Universalis' leaders (people who are born, rule and die), but war and armies
+are not the point. Play is about food and stores, custom and government, and
+the people's ideas and culture.
+
+Buddhist ideas (saṅkhāra, karma, rebirth) shape the mechanics but are never
+named or explained in the game, the README, the About text or any other
+description. Nothing says that there is no winning: the game simply runs until
+the player stops.
+
+## The start
+
+The people begin as one small band, the first of their kind, a few hundred
+people at most (never more than about 1,500) in a few camps. They have fire,
+stone tools, names, a language, old songs and some belief in the unseen. There
+is no farming, trade, money, goods, cities or armies, and no settled way of
+choosing leaders.
+
+## Development
+
+Everything beyond that must be discovered, and nothing is prescribed to turn out
+as it did in the real world. Ideas form a web: each needs earlier ideas and the
+right circumstances (water nearby, grassland, game, having met another people,
+enough people). Insight comes from ordinary life, from someone working at an
+idea, from chance and from other peoples. A full web should take a few hundred
+years.
+
+Many ideas are customs that settle into one of several **forms** with different
+effects: how giving works, what exchange uses (favours owed, wares, tokens of
+shell or stone, or none of these), how planting is done, how leaders are chosen,
+how wrongs are judged. Whoever worked an idea out, or the leader, chooses its
+form; when a custom is being settled anyone may speak for a form, and the
+respected are heard more. Otherwise the people's own inclinations decide.
+
+Roles appear with the ideas that make them: leader, keeper of the songs, hunter,
+gatherer and maker at first; fisher, planter, herder, go-between and others
+later, while old ways grow rarer.
+
+## A year
+
+One turn is one year. The years run on a clock the player can pause or step
+through one at a time; each year lasts long enough to react. News (an
+obligation, a work finished or stalled, a discovery, strangers, a death) is
+shown and lingers but does not stop the years. Only a pop-up asking the player
+to decide holds them.
+
+The player acts as their current character, not as an abstract manager. They
+have:
+
+- **Three slots of attention**, all optional. A slot holds a one-year deed, an
+  answer to an obligation, or a multi-year project. Nothing is chosen for the
+  player: a deed is kept up until changed, a finished project leaves its slot
+  empty, and a whole life can pass with nothing taken up.
+- **Their role's means**: a coarse budget of a few kinds (food, hands, regard,
+  and later whatever form of exchange the people settle on). The leader also
+  draws on what is held in common; others on their family's.
+
+The attention choices are placeholders and need their own design pass.
+
+## Leading from anywhere
+
+Most projects are **the people's works**: shared undertakings that outlive
+whoever began them. Anyone can begin one, help with one, take up one left
+unfinished, or call others to it; when the one leading it dies it passes on
+rather than ending. Together with speaking when customs are settled, this gives
+every role a clear, connected influence over the direction of the people, even
+though most lives will not be the leader's.
+
+The thread between lives runs through these works: a new life opens with what
+was finished while the character grew up, and what is still unfinished and who
+carries it.
+
+## Leadership
+
+In a society this young leadership is earned, not inherited. The people look to
+whoever is most respected; a leader may give way when old or frail, or be
+passed over for someone who far outshines them, and anyone respected enough can
+ask the people to follow them (and may fail). The first character leads for a
+random reason of their own (bringing the hunters home through the snows,
+settling a quarrel...), never because a parent died. Only if the people adopt a
+custom of lineage does leading pass through a family; a council of elders or
+the strongest are other forms.
+
+## Events
+
+Each year brings events, some random and some from the people's state. They are
+not fair: outcomes can be unjust or pointless. Events are the main source of
+obligations, which ask something of the player and may have harsher alternative
+answers.
+
+## Lives and rebirth
+
+A life runs about 20 to 50 years from adulthood, with a hidden, random death
+age (health can end it sooner), so final decisions cannot be timed. A game is
+several hundred years and many lives.
+
+On death the player is reborn among the same people, into a role drawn from
+those that exist. Rank is not a reward: every role has the same three slots,
+with different kinds and scope of influence (a leader's broad and slow, a
+fisher's local and immediate). Status says nothing about worth. The people the
+player shaped remain, and they may be born into the consequences.
 
 ## Karma
 
-Intentional action and its consequences. Each turn's actions (and skipped
-obligations) adjust a karma score clamped to `[-1, 1]`; see `ACTIONS` in
-`sankhara/constants/config.py`.
+A hidden score in [-1, 1], never shown as a number or a word; only its effects
+are felt. It attaches to intention and choice, never to outcomes or to the
+budget: which deeds and projects are taken up, which obligations are skipped,
+which forms are chosen. Stepping through a year attentively weighs slightly
+well; letting a year slip by with nothing taken up weighs slightly ill.
 
-## Rebirth and lineage
+At rebirth karma shapes the conditions within the new role, not the role
+itself: mostly the inclinations carried over, and to a lesser degree health,
+fortune, family stability and the warmth of parents.
 
-A player is born into a `Family` on a home tile, which determines their culture
-group and names. `Player.reincarnate()` swaps in a new state (and optionally a
-new family); how karma drives rebirth is still to be designed.
+## Tendencies (saṅkhāra)
 
-## Open questions
+A life's habitual choices become the next life's default impulses. They are
+never shown as labels or a character sheet, only felt: some choices cost less,
+come first or are tinted as tempting; others carry friction. The nudge is mild
+to moderate, always overridable at a small cost, and consistent enough to be
+learned. Repetition strengthens a tendency, acting against it weakens it, and
+the pattern at death carries over.
 
-- How karma maps to the next birth (species, family, location).
-- Whether NPCs share the same karma model.
+## Other people
 
+NPCs follow the same model, simplified. The leader, elders and people near the
+player or in power are tracked in detail; the rest are handled statistically.
 
-## User Notes
-- Original conversation is lost.
-- The game overall is supposed to be a nation builder that does not focus
-on war and army building. It's supposed to be a strategy game with resource
-mangament, policy/government management, scientific and cultural development
-but without armies and war being the main goal.
-- The Karma and rebirth cycle was inspired by the mechanics of the leader in games
-like Europa Universalis, in which the player is in charge of a country, but the leaders
-are born and die throughout the game, and lineage is an import aspect of holding power.
+Other peoples share the land. They grow, learn, meet the player's people, share
+ideas, intermarry, and drift toward or away from them.
 
+## Violence
 
-## Updated design direction:
+Violence is real and should be present, but never the focus. For now it comes
+as raids from other peoples, answered by seeking redress or, more harshly, by
+revenge. There are no armies; any form of organised violence must be discovered
+like everything else.
 
+## Ahead
 
-Design summary
+- **M2**: policy and government, and more development.
+- **M3**: detailed NPCs, relationships and politics.
+- A design pass on the attention choices.
+- Becoming non-human is out of the main game (perhaps an easter egg).
 
-Premise. A nation builder with no focus on war or armies. Play centers on resource management, policy and government, and scientific and cultural development. Buddhist ideas (saṅkhāra, karma, rebirth) are modeled in the mechanics but never named or highlighted. There is no win condition, and the game runs until the player stops.
+## Play-test notes
 
-Turn structure. One turn is one year. The player acts as the current character, not as an abstract manager of the nation. Each turn has two layers: a fixed number of action slots (about 2 to 3) representing personal attention, and a coarse resource budget (a few categories) representing the nation’s capacity, which actions spend. Karma attaches only to the action layer: which actions are chosen and which obligations are skipped. Budget allocation affects the nation but not karma.
-
-Events. Each year brings events, some random and some driven by the nation’s state. No attempt is made at fairness. Outcomes can be unjust or pointless. Events are the main source of obligations, and skipping them is penalized in karma. Karma tracks intention and choice, never outcomes.
-
-Lifespan and lineage. A character’s life runs roughly 20 to 50 turns with a randomized death age, so the player cannot time final decisions. A full game spans several hundred turns and roughly 6 to 12 lives. Succession and lineage matter, as in Europa Universalis leaders.
-
-Karma. Karma is a hidden score clamped to [-1, 1], never displayed as a number or label. Its only visible effects are felt ones.
-
-Rebirth. Rebirth always stays within the same nation. Social station at rebirth is random, so players are not guaranteed to be rulers, and rank is not part of the karmic ledger at all. Every station has the same size of action set, with differing kinds and scopes of influence: a ruler’s is broad and slow, while a farmer’s or merchant’s is local and immediate. The design deliberately takes the position that status says nothing about worth. Karma governs the conditions within the station: mainly internal (tendencies), with smaller material (health, wealth within the station, family stability) and relational (parents, spouse, advisors, friends) adjustments. Becoming non-human is excluded from the main game, possibly reserved for an easter egg.
-
-Tendencies (saṅkhāra). The past life’s habitual choices become the next life’s default impulses. They are never shown as labels or a character sheet and are only felt through the interface: some actions are cheaper in attention or resources, more prominent or tempting, or carry friction. The effect is a mild-to-moderate nudge that can always be overridden at a small extra cost. Effects must be consistent enough to be learnable. Tendencies shift throughout life at a constant rate: repetition strengthens them and acting against them weakens them, and the pattern at death is what carries into the next life.
-
-NPCs. NPCs use the same model in simplified form, with tendencies that shift based on coarsely simulated choices. Rulers, heirs, advisors, and people near the player or in positions of power are tracked in detail, and the rest are handled statistically. Because rebirth stays in one nation, the people the player influenced remain, and the player can be reborn into the consequences of how they treated and shaped them.
-
-
-## Updates after first play through (basic UI done from Milestone 1)
-No descriptions of the game, including "about" sections or subtitles, should
-give away the "punchline" of their being "no winning". That's a huge spoiler,
-so it should never be explicit. Similarly, the karma mechanism should not be
-explicitly stated. Starting @ 20 is acceptable for now, but the civilization
-is far too advanced. It needs to start much further back without so many modern
-assumptions applied. There should not yet be coin money or "goods" to be traded.
-Imagine the first tribe of people that became modern humans that walked out of Africa,
-that's where you start, but not in Africa. It should be a small tribe, max 1,500,
-with no clear economic system, no farming, nothing but some oral traditions,
-superstitions/religius beleifs, names, language, but socially very early in
-their development. Currency, trade, cities, all of that needs to be discovered,
-designed, developed. But I don't want it to be prescribed as coming out the way
-things are now in the real world (e.g. coins, banks, etc.). This game should be more
-fluid than that, and play more like a simulation of human society over generations that
-a player can influence through their decisions. War is specifically deprioritized,
-so nothing about combat or armies to start, but that is something that will need to be addressed,
-becuase violence is real, and I want some aspects of it in the game. It can't be the focus, though.
-
-A separate design effort needs to be made for the attention choices. They're okay to
-start, and as fillers, but this needs some close attention.
-
-There should be multi-year projects with interupting events every few years, instead of
-having to manually choose minutia events each year. Similar to the mechanism in civilization
-with research, or building, or whatever taking a few turns, and if "auto end turn" is
-selected, the game runs the plan until something (e.g. disaster, other player)
-interrupts.
-
-Much of the development mechanism should be like Civilization, which is an excellent game,
-but there's way too much of a focus on combat. The development mechanisms, though, are
-very good and should be thought of as a guide for Sankhara.
-
-
-## Feedback 2
-Desicions at all levels of society that are under control of any station should show a clear,
-connected influence over the direction of society. The mechanics of the UI are generally okay,
-but the individual is taking too much focus over building the nation. The odds of becoming a leader
-are very small, so most of the game will likely be played as a farmer, which isn't quite
-the intent. I understand how mathematically there is simply a higher chance of
-being a farmer than a leader, since there are more farmers than leaders, but the game
-has to allow for players to lead from wherever they are. For example, the projects started in
-the first round when the player is the leader should still be relevant to the next character,
-like they can work on the project to build roads that the leader started, or something like
-that. The "a life begins" is a good place to keep that thread going.
-
-
-## Feedback 3
-
-The years don't run properly. The player shouldn't be forced to do all three things or explicitly
-leave an action blank. Choosing to let the years run, vs manually stepping through each year
-should have some influence on the karma. Only the events that have a pop-up window should
-force the player to choose. When a multi-year project ends, the slot should switch to empty
-and stay that way until the player takes action. Meaning - a player can run an entire life doing
-nothing at all, not even explicitly doing nothing. Even the events that require the player's
-attention should not stop the advance of years. This means there should be some time to the
-year, so that players have enough time to react and stop the advance of years, in case they
-do want to do something.
-
-The new life is better. As for the odds of becoming a leader - being born into it is okay, but
-it's not really in keeping with early civilization that has not decided hereditary leadership
-cycle. leadership should be something that is earned in a society this young, so the player
-should be able to become a leader in a given lifetime. The first round can have a random
-backstory for why the player is the leader, but the "your parent died" implies a default
-hereditary lineage of power, which I don't want.
+New feedback goes here; it is folded into the sections above once built.
