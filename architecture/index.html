@@ -679,6 +679,10 @@ game starts with a small band rather than a kingdom; this is how that is built:<
 <td><code>npc.py</code>: tracked adults take on projects (elders and the leader always) and a deed a year by inclination, chosen from their cares and the answers to the matters the people's state raises (<code>events.lasting_answers</code>: hunger, quarrels, low stores, plenty); the leader also weighs the people's needs. Their deeds earn standing; only the leader's act on the people.</td>
 </tr>
 <tr>
+<td>Relationships and politics (M3, begun)</td>
+<td>Everyone tracked has an <code>affinity</code> toward others; the panel's <strong>Around you</strong> (<code>game.around_you</code>) shows whoever leads and those in your camp you have most to do with, and how they feel about you in words (<code>words.feeling_word</code>). Feuds are between families you know (<code>events._feud</code> picks tracked families in your camp): siding with one wins its members and estranges the other's, and a feud that turns bloody kills a named man. A <strong>rival</strong> (<code>events.rival</code>: the most respected grown person near the leader's standing) is a matter for the leader (win them over, give them a place beside you, or face them down, a contest of standing) and for everyone else (speak for the rival, stand behind the leader, or keep out of it); unanswered, the talk grows.</td>
+</tr>
+<tr>
 <td>No win condition</td>
 <td>The game runs until the player stops; it autosaves every year.</td>
 </tr>
