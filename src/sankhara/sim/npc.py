@@ -19,6 +19,15 @@ DEED_REGARD = 1.0
 JOIN_WEIGHT = 1.5  # helping with what is under way comes more naturally than beginning anew
 LEAVE_CHANCE = 0.12
 ELDER_REGARD = 2.0
+NOTED_DEEDS = (  # a leader's deeds the people hear about
+    "open_stores",
+    "drive_out",
+    "larger_share",
+    "call_together",
+    "hear_them_out",
+    "make_room",
+    "face_down",
+)
 BID_CHANCE = 0.06  # a year in which someone who rivals the leader asks the people to follow
 BID_SHARE = 0.9  # standing, relative to the leader's, from which someone might ask
 GRUDGING = 0.2  # how little a work draws someone whose family bears its leader's a grudge
@@ -212,6 +221,6 @@ def npc_year(state, protect=()):
             cost = effective_cost(state, char, deed)
             budget_for(state, char, deed).spend(cost)
             result = deed.effect(Ctx(state, char, rng))
-            if deed.id in ("open_stores", "drive_out", "larger_share", "call_together"):
+            if deed.id in NOTED_DEEDS:
                 notes.append(f"{char.full_name}: {result}")
     return notes
