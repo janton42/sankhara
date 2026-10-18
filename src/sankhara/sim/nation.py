@@ -26,6 +26,8 @@ WORK_CAPS = {
     "paths": 1,
 }
 GROWTH = 0.02
+TOWN_SIZE = 600  # a village this big becomes a town, once the people know what that is
+KINDS = ("camp", "village", "town")
 
 
 def clamp(x, lo=0.0, hi=100.0):
@@ -85,6 +87,7 @@ def economy_year(state):
     relief = mods.get("relief", 0.0)
     hungry = []
     share = min(0.8, SHARE_OF_SURPLUS + fx.get("stores_share", 0))
+    scale = people_scale(state)
     # the more people, the harder it is to hold them together
     size_strain = 6 * math.log2(max(1.0, state.total_population() / 300))
     paths = (
@@ -92,6 +95,10 @@ def economy_year(state):
     )  # camps that can reach each other hold together
 
     for s in state.settlements.values():
+        if fx.get("settled") and s.kind == "camp":
+            s.kind = "village"
+        if fx.get("towns") and s.kind == "village" and s.population >= TOWN_SIZE:
+            s.kind = "town"
         cap = capacity(state, s, fx)
         ratio = s.population / cap
         season = mods.get("harvest", 1.0) * mods.get(f"harvest:{s.id}", 1.0)
@@ -100,7 +107,9 @@ def economy_year(state):
         )
         need = s.population * FOOD_NEED
         surplus = production - need
-        given = max(0.0, surplus) * share
+        # what reaches the common stores grows with the people as what is drawn from them
+        # does (people_scale), not with every mouth: distant camps keep more of their own
+        given = max(0.0, surplus) * share / scale
         balance = surplus - given
         if balance < 0:
             # store pits soften a lean year
@@ -143,8 +152,6 @@ def economy_year(state):
         s.cohesion = clamp(s.cohesion + 0.15 * (target_cohesion - s.cohesion))
         target_plenty = 45 + 25 * surplus_ratio + fx.get("plenty", 0) + paths
         s.plenty = clamp(s.plenty + 0.15 * (target_plenty - s.plenty))
-        if fx.get("settled") and s.kind == "camp":
-            s.kind = "village"
 
     if hungry:
         notes.append(f"Hunger in {', '.join(hungry)}.")

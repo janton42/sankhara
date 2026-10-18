@@ -26,10 +26,13 @@ def _crowded(state):
 
 def situational(state, char, action_id):
     """The leader responds to the people's state, whatever their inclinations."""
+    nation = state.nation
+    if action_id == "reform":
+        # customs are questioned when the people are restless, seldom otherwise
+        return 1.5 if nation.cohesion < 40 else 0.1
     if char.station != "leader":
         # ordinary people rarely uproot families or set out for new land on their own
         return 0.2 if action_id in ("new_camp", "explore") else 1.0
-    nation = state.nation
     hungry = any(s.food_balance < 0 for s in state.settlements.values())
     if action_id == "open_stores":
         return 6.0 if hungry else 0.2

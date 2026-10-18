@@ -38,6 +38,7 @@ RALLY_TAGS = ("ambitious", "caring")
 LEGACY_LIMIT = 200
 FINISH_REGARD = 5  # the people remember who led a work of theirs to the end...
 HELPED_REGARD = 2  # ...and who helped
+REFORM_REGARD = 20  # standing it takes to call for a custom to be settled anew
 
 
 @dataclass(frozen=True)
@@ -90,10 +91,14 @@ def _pursue_work(ctx, project):
     return None
 
 
-def _pursue_years(state, char, target):
+def _pursue_years(state, char, target, rate=1.0):
+    """A rough guess at how long working at an idea will take: this character's own pace
+    (and that of helpers, as `rate`), sharpened by whatever the people know about
+    thinking. Ordinary life and chance bring it closer too, so it errs long."""
     d = discoveries.DISCOVERIES[target]
     left = max(0.0, d.cost - state.nation.insight.get(target, 0))
-    return max(1, math.ceil(left / pursue_rate(state, char)))
+    per_year = pursue_rate(state, char) * max(1.0, rate) * discoveries.fx(state, "insight_mult")
+    return max(1, math.ceil(left / per_year))
 
 
 # --- the people's works ------------------------------------------------------
@@ -349,6 +354,30 @@ def _knows(did):
     return lambda state, char: did in state.nation.known
 
 
+# --- settling a custom anew -------------------------------------------------------
+
+
+def _custom_targets(state, char):
+    """Customs the people keep that have stood long enough to be questioned."""
+    return discoveries.customs(state)
+
+
+def _respected(state, char):
+    return char.station == "leader" or char.means.get("regard") >= REFORM_REGARD
+
+
+def _reform_finish(ctx, project):
+    """The people gather to settle the custom anew. Who decides is worked out when the
+    year's discoveries are settled (`game`): the player if they led this or lead the
+    people; otherwise the people's own leanings, with the player's voice among them."""
+    state = ctx.state
+    state.due_choices.append({"did": project.target, "by": ctx.char.id})
+    return (
+        f"The {state.nation.name} gathered to settle anew how they "
+        f"{discoveries.CUSTOMS[project.target]}."
+    )
+
+
 PROJECT_LIST = [
     ProjectDef(
         "pursue",
@@ -575,6 +604,19 @@ PROJECT_LIST = [
         common=False,
     ),
     ProjectDef(
+        "reform",
+        "Change how the people {target}",
+        "Go from fire to fire until enough agree that the custom should be settled anew.",
+        (),
+        ("ambitious", "contemplative"),
+        0.0,
+        4,
+        {"regard": 2, "hands": 1},
+        finish=_reform_finish,
+        targets=_custom_targets,
+        requires=_respected,
+    ),
+    ProjectDef(
         "paths",
         "Clear paths between the camps",
         "Trodden, marked ways, so the camps can reach one another in any season.",
@@ -647,6 +689,8 @@ def display_name(state, project):
     if project.target is not None:
         if project.kind == "pursue":
             label = discoveries.QUESTIONS.get(project.target, project.target)
+        elif project.kind == "reform":
+            label = discoveries.CUSTOMS.get(project.target, project.target)
         elif project.kind == "new_camp":
             col, row = (int(x) for x in project.target.split(","))
             t = tile(state, col, row)
@@ -717,10 +761,8 @@ def progress(state, project):
 
 def years_left(state, project):
     if project.kind == "pursue":
-        d = discoveries.DISCOVERIES[project.target]
-        left = max(0.0, d.cost - state.nation.insight.get(d.id, 0))
-        per_year = max(1.0, project.rate * PURSUE_RATE)
-        return max(1, math.ceil(left / per_year))
+        char = state.character(project.leader_id) or state.player
+        return _pursue_years(state, char, project.target, project.rate)
     return max(1, math.ceil((project.needed - project.done) / max(0.5, project.rate)))
 
 

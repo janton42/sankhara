@@ -33,7 +33,7 @@ and politics.
 
 - Design rules: karma, tendencies and death ages are hidden. Never put the words karma, rebirth, tendency or saṅkhāra (or their numbers) in the UI; `tests/test_ui.py` checks this.
 - All randomness in the sim goes through `state.rng()`, so saves replay identically; never use the global `random` there.
-- Balance check: autoplay a few hundred years headless (see `tests/test_sim/conftest.py::autoplay`) and look at population, cohesion, stores, how fast discoveries arrive (all ~30 should take ~200-300 years) and character counts.
+- Balance check: autoplay a few hundred years headless (see `tests/test_sim/conftest.py::autoplay`) and look at population, cohesion, stores, how fast discoveries arrive (the first ~30 should take ~200-300 years; the later ~14 in `discoveries.LATER_IDEAS` should follow over the next ~150-200) and character counts.
 - No era-anachronisms early on: no coin, goods, cities or armies until the people discover their own forms of them; budget categories come from `discoveries.categories()`.
 - Tiles are dicts (`id`, `q`=col, `r`=row, `elevation`, `moisture`, `biome`, `abbr`, `resources`); the map is a list of columns, laid out as a pointy-top odd-r hex grid.
 - `generate_map(seed)` is deterministic per seed; pass an `rng` rather than using global `random` in generation code.

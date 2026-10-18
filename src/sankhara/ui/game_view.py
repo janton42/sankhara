@@ -11,6 +11,7 @@ from kivy.uix.scrollview import ScrollView
 from kivy.uix.widget import Widget
 
 from sankhara.sim import discoveries, game, projects
+from sankhara.sim.nation import KINDS
 from sankhara.sim.people import family_of
 from sankhara.sim.peoples import relation_word
 from sankhara.sim.stations import ACTION_SLOTS, station_title
@@ -133,7 +134,7 @@ class CharacterPanel(BoxLayout):
         pop = state.total_population()
         food = sum(s.food_balance for s in state.settlements.values())
         kinds = {s.kind for s in state.settlements.values()}
-        place = "villages" if kinds == {"village"} else "camps"
+        place = " and ".join(f"{k}s" for k in KINDS if k in kinds)
         self.people_label.text = "\n".join(
             [
                 f"[b]The {nation.name}[/b]  ·  {led}",
@@ -210,6 +211,13 @@ class FormChoicePopup(Popup):
             if deciding
             else "The people are deciding how it should be. What will you speak for?"
         )
+        old = d.form(state.nation.known.get(d.id, ""))
+        if old is not None:
+            # a custom the people already keep, being settled anew
+            question = (
+                f"The people have gathered to settle anew how they "
+                f"{discoveries.CUSTOMS[d.id]}. Until now: {old.name.lower()}. " + question
+            )
         content = BoxLayout(orientation="vertical", spacing=8, padding=[10, 8])
         content.add_widget(WrapLabel(text=f"{d.text}\n\n{muted(question)}"))
         for form in d.forms:
