@@ -264,6 +264,20 @@ def _trade(ctx):
     return "You carried things from those who had them to those who wanted them."
 
 
+def _keep_watch(ctx):
+    ctx.nation.watched_until = ctx.state.year + 1
+    _people(ctx, cohesion=0.5)
+    _gain(ctx, "regard", 1.5)
+    return "You walked the edges of the camps by night, and people slept the better for it."
+
+
+def _train_young(ctx):
+    _nudge_insight(ctx, "craft", 2)
+    _local(ctx, cohesion=1)
+    _gain(ctx, "regard", 1)
+    return "The young learned to hold a line and to loose together."
+
+
 # --- answers: hunger and plenty ---------------------------------------------------
 
 
@@ -511,6 +525,35 @@ def _avenge_raid(ctx):
         ctx.state.seat.population *= 0.98
         return f"Our people fell on the {n.name} by night. Not all of ours came back."
     return f"Our people fell on the {n.name} by night and took back more than was stolen."
+
+
+def _stand_guard(ctx):
+    camp = _event_camp(ctx)
+    ctx.nation.watched_until = ctx.state.year + 1
+    _local(ctx, cohesion=2, camp=camp)
+    _gain(ctx, "regard", 2)
+    return f"You and yours stood guard over {camp.name} through the dark months."
+
+
+def _meet_challenge(ctx):
+    n = ctx.state.neighbour(ctx.event.data.get("neighbour")) if ctx.event else None
+    roll = ctx.rng.random()
+    if roll < 0.55:
+        _gain(ctx, "regard", 4)
+        _people(ctx, cohesion=1)
+        return "You met their champion at the border and bested him. The songs have it already."
+    heal(ctx.char, -15)
+    if n:
+        n.relations = min(1.0, n.relations + 0.05)
+    return "You met their champion and were carried home. They were gracious about it."
+
+
+def _decline_challenge(ctx):
+    n = ctx.state.neighbour(ctx.event.data.get("neighbour")) if ctx.event else None
+    if n:
+        n.relations = min(1.0, n.relations + 0.05)
+    _local(ctx, cohesion=-0.5)
+    return "You sent word that our people do not fight for sport. Some of the young were sorry."
 
 
 def _hunt_beast(ctx):
@@ -813,6 +856,28 @@ ACTION_LIST = [
         ("diligent",),
         0.01,
         _trade,
+        {"hands": 2},
+        care=True,
+    ),
+    Action(
+        "keep_watch",
+        "Keep watch over the camps",
+        "Walk the edges by night, so raiders find the people awake.",
+        ("warrior",),
+        ("diligent", "caring"),
+        0.02,
+        _keep_watch,
+        {"hands": 3},
+        care=True,
+    ),
+    Action(
+        "train_young",
+        "Train the young",
+        "Teach the young to hold a line and loose together.",
+        ("warrior",),
+        ("diligent", "studious"),
+        0.01,
+        _train_young,
         {"hands": 2},
         care=True,
     ),
@@ -1132,7 +1197,7 @@ ACTION_LIST = [
         "avenge_raid",
         "Avenge the raid",
         "Lead our people against the raiders.",
-        ("leader", "hunter"),
+        ("leader", "hunter", "warrior"),
         ("harsh", "ambitious"),
         -0.08,
         _avenge_raid,
@@ -1140,10 +1205,39 @@ ACTION_LIST = [
         scope="people",
     ),
     Action(
+        "stand_guard",
+        "Stand guard over {camp}",
+        "Keep your band at the struck camp until the raiders give up.",
+        ("warrior",),
+        ("diligent", "caring"),
+        0.03,
+        _stand_guard,
+        {"hands": 4},
+    ),
+    Action(
+        "meet_challenge",
+        "Meet their champion",
+        "Go to the border and fight, for the honour of the people.",
+        ("warrior", "hunter"),
+        ("ambitious",),
+        -0.01,
+        _meet_challenge,
+        {"hands": 2},
+    ),
+    Action(
+        "decline_challenge",
+        "Send word that we do not fight for sport",
+        "Let their champion go home unmet.",
+        ("warrior", "hunter", "leader"),
+        ("contemplative",),
+        0.02,
+        _decline_challenge,
+    ),
+    Action(
         "hunt_beast",
         "Hunt the beast down",
         "Go after it before it takes anyone else.",
-        ("leader", "hunter"),
+        ("leader", "hunter", "warrior"),
         ("diligent", "caring"),
         0.03,
         _hunt_beast,

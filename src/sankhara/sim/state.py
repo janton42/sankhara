@@ -121,6 +121,7 @@ class Nation:
     succession: str = "respected"  # how a new leader is found
     names: dict[str, str] = field(default_factory=dict)  # display names: categories, titles
     settled_in: dict[str, int] = field(default_factory=dict)  # discovery id -> year settled
+    watched_until: int = 0  # the last year someone stood watch over the camps
 
 
 @dataclass

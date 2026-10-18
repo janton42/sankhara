@@ -116,6 +116,18 @@ STATIONS = {
             domains=("land",),
         ),
         Station(
+            "warrior",
+            "One who fights",
+            10,
+            "animal",
+            income={"food": 5, "regard": 2},
+            hands=5,
+            start={"food": 8, "regard": 5},
+            requires="warriors",
+            requires_forms=("war_band",),
+            domains=("craft", "kin"),
+        ),
+        Station(
             "trader",
             "Go-between",
             8,

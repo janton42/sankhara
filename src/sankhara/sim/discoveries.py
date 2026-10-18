@@ -12,7 +12,7 @@ Effects are combined across everything known:
 - keys ending in `_mult` multiply (food_mult, capacity_mult, insight_mult,
   plague_mult, raid_mult, contact_mult)
 - numbers add (spoilage, health, cohesion, plenty, lore, stores_share, leader_regard,
-  defence)
+  leader_food, defence)
 - `fishing`, `settled` and `towns` are flags
 - `succession`, `title:<role>` and `category:<id>` are applied once, when learned
 
@@ -701,14 +701,14 @@ DISCOVERY_LIST = [
                 "A share for the leader",
                 "Every family gives a share of what it brings in to the leader's store.",
                 ("ambitious", "acquisitive"),
-                {"stores_share": 0.15, "cohesion": -3, "leader_regard": 3},
+                {"leader_food": 5, "stores_share": 0.05, "cohesion": -3, "leader_regard": 3},
             ),
             Form(
                 "free_gifts",
                 "Gifts freely given",
                 "The leader is kept by gifts, and a leader nobody gives to does not lead long.",
                 ("generous",),
-                {"cohesion": 2, "leader_regard": 1},
+                {"leader_food": 2, "cohesion": 2, "leader_regard": 1},
             ),
             Form(
                 "nothing_owed",
@@ -932,12 +932,33 @@ def ripe(state):
 # --- forms ---------------------------------------------------------------------
 
 
-def people_lean(state, tags):
-    """How strongly the people as a whole lean toward these inclinations."""
+def deciders(state):
+    """Whose leanings settle a custom when no one decides it alone: under a council of
+    elders, the elders and the one who leads; otherwise the grown people as a whole."""
     adults = [c for c in state.living() if c.age(state.year) >= ADULT_AGE]
-    if not adults:
+    if state.nation.succession == "council":
+        council = [c for c in adults if c.is_elder or c.id == state.nation.leader_id]
+        if council:
+            return council
+    return adults
+
+
+def deciders_word(state):
+    """Who is settling a custom, for the player: "the people", "the elders" or "the chief"."""
+    rule = state.nation.succession
+    if rule == "council":
+        return "the elders"
+    if rule == "strongest":
+        return "the chief"
+    return "the people"
+
+
+def people_lean(state, tags):
+    """How strongly those who settle customs lean toward these inclinations."""
+    who = deciders(state)
+    if not who:
         return 0.0
-    return sum(tendencies.affinity(c.tendencies, tags) for c in adults) / len(adults)
+    return sum(tendencies.affinity(c.tendencies, tags) for c in who) / len(who)
 
 
 def pick_form(state, d, rng, lean_to=None):

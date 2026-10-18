@@ -577,7 +577,8 @@ def end_year(state, attended=True):
             if state.pending_mode == "decide":
                 interrupts.append(f"A choice must be made: {name}.")
             else:
-                interrupts.append(f"The people are deciding: {name}.")
+                who = discoveries.deciders_word(state).capitalize()
+                interrupts.append(f"{who} are deciding: {name}.")
     return report
 
 
@@ -642,8 +643,30 @@ def _idea_workers(state, did):
 
 def _decides(state, d, led):
     """Whether the player chooses a custom's form outright: they worked it out (or called
-    for it to be settled anew), or they lead the people and it is a matter of custom."""
-    return led or (state.player.station == "leader" and d.domain == "kin")
+    for it to be settled anew), or they lead the people and it is a matter of custom. How
+    the people decide changes this: a chief who holds them by strength settles every
+    custom; under a council of elders nobody settles one alone."""
+    if led:
+        return True
+    if state.player.station != "leader":
+        return False
+    rule = state.nation.succession
+    if rule == "council":
+        return False
+    return rule == "strongest" or d.domain == "kin"
+
+
+def _voice(state):
+    """How far the player's word carries when a custom is spoken for: their standing;
+    more if they sit in a council that decides it, less under a chief who decides alone."""
+    player = state.player
+    voice = 1 + player.means.get("regard") / VOICE_WEIGHT
+    rule = state.nation.succession
+    if rule == "council" and (player.is_elder or player.station == "leader"):
+        voice *= COUNCIL_VOICE
+    elif rule == "strongest" and player.station != "leader":
+        voice *= CHIEF_RULES
+    return voice
 
 
 def _settle_customs_anew(state, lines, interrupts, rng, protect=()):
@@ -720,6 +743,8 @@ def _settled(state, did, form_id):
 
 
 VOICE_WEIGHT = 25  # regard at which the player's voice doubles a form's chances
+COUNCIL_VOICE = 3  # how much more a seat on the council of elders makes one's word carry
+CHIEF_RULES = 0.5  # how much less anyone else's word carries where the strongest leads
 
 
 def choose_form(state, form_id):
@@ -747,7 +772,7 @@ def choose_form(state, form_id):
             state, f"{d.name}: {form.name.lower()}, as you decided.", [player.full_name]
         )
     else:
-        voice = 1 + player.means.get("regard") / VOICE_WEIGHT
+        voice = _voice(state)
         weights = [
             math.exp(4 * discoveries.people_lean(state, f.tags)) * (voice if f.id == form_id else 1)
             for f in d.forms
