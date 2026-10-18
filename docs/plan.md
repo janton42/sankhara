@@ -27,12 +27,12 @@ and not all be good.
    one's single choice, and the matter becomes something else (newcomers settling,
    traders at the market). Hunters meet hunters' matters, keepers keepers'. The
    size of the people and what they know set which matters arise at all.
-2. **Harm you can start** (begun: theft, fights, affairs, killing, blood owed; lies and cheating in exchange to come). Under "your own", deeds that do harm: take from
+2. **Harm you can start** (built: theft, fights, affairs, killing, blood owed, lies, short measure). Under "your own", deeds that do harm: take from
    another family's stores, start a fight, spread a lie about someone, an affair,
    cheat in an exchange, and, at the far end, kill a rival. They can work, may be
    found out, and bring grudges, feuds, exile or revenge. Weighed by intention,
    like everything else; never labelled.
-3. **Neither good nor bad.** Choices that are ordinary in the people's own terms
+3. **Neither good nor bad** (built: bride-price, captives, a price for the wrong, ordeal, keeping seed back). Choices that are ordinary in the people's own terms
    but sit uneasily by ours: blood-price instead of judgement, ordeal, taking
    captives after a raid, a bride-price, keeping seed back from the hungry for
    next year's planting.

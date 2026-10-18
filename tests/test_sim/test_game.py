@@ -1106,7 +1106,7 @@ def test_the_player_is_offered_a_match_and_can_take_it(state):
     assert match is not None and match.target_id in {c.id for c, _ in people.matches_for(state, me)}
     match.target_id, match.data = other.id, {"match": other.name, "family": "Otherkin"}
     state.events.append(events.offer(state, me, match))
-    assert match.answers == ["accept_match", "refuse_match"]
+    assert match.answers == ["accept_match", "bride_price", "refuse_match"]
     me.means.add({"food": 10})
     state.plan = [_answer(match, "accept_match"), None, None]
     game.end_year(state)
@@ -1385,3 +1385,74 @@ def test_those_owed_blood_may_come_for_it(state, monkeypatch):
     _matter(state, "blood_owed", data={"family": foe.family_name, "victim": "someone"})
     report = game.end_year(state)
     assert report.life_ended and "vengeance" in me.cause_of_death
+
+
+# --- lies, trade, and the people's own ways -----------------------------------------
+
+
+def test_a_tale_spread_lowers_someone_who_outshines_you(state, monkeypatch):
+    me = state.player
+    me.means.set("regard", 5)
+    other = _other_adult(state, me)
+    other.settlement_id = me.settlement_id
+    other.means.set("regard", 50)
+    matter = _tempt(state, "outshone")
+    assert matter.answers == ["spread_tale", "praise_them", "say_nothing"]
+    who = state.character(matter.target_id)
+    before = who.means.get("regard")
+    monkeypatch.setattr(actions, "_found_out", lambda ctx, *a, **k: "")
+    _do(state, matter, "spread_tale")
+    assert who.means.get("regard") == pytest.approx(before * actions.TALE_COST)
+
+
+def test_short_measure_once_the_people_exchange(state):
+    me = state.player
+    assert events.EVENT_DEFS["trade_offer"].chance(state, me) == 0
+    state.nation.known["exchange"] = "barter"
+    assert events.EVENT_DEFS["trade_offer"].chance(state, me) > 0
+    matter = _tempt(state, "trade_offer")
+    assert matter.answers == ["short_measure", "fair_trade"]
+
+
+def test_a_bride_price_is_paid_by_the_grooms_kin(state):
+    me, other = _unwed_pair(state)
+    me.means.set("food", 50)
+    matter = _matter(state, "match", target_id=other.id, data={"family": "Otherkin"})
+    _do(state, matter, "bride_price")
+    assert me.spouse_id == other.id
+    expected = 50 - actions.BRIDE_PRICE if me.gender == "male" else 50 + actions.BRIDE_PRICE
+    assert me.means.get("food") == expected
+
+
+def test_captives_only_where_the_people_have_those_who_fight(state):
+    n = next(iter(state.neighbours.values()))
+    n.met = True
+    raid = _matter(state, "raid", data={"neighbour": n.id})
+    assert "take_captives" not in raid.answers
+    state.nation.known["warriors"] = "war_band"
+    raid = _matter(state, "raid", data={"neighbour": n.id})
+    assert "take_captives" in raid.answers
+    camp = state.settlement(state.player.settlement_id)
+    before, relations = camp.population, n.relations
+    _do(state, raid, "take_captives")
+    assert camp.population == before + actions.CAPTIVES and n.relations < relations
+
+
+def test_a_feud_can_be_settled_by_a_price_or_an_ordeal(state):
+    state.nation.known.pop("spirits", None)
+    feud = _matter(state, "feud", data={"a": "X", "b": "Y"})
+    assert "set_blood_price" in feud.answers and "ordeal" not in feud.answers
+    state.nation.known["spirits"] = "ancestors"
+    feud = _matter(state, "feud", data={"a": "X", "b": "Y"})
+    assert "ordeal" in feud.answers and feud.expected
+
+
+def test_seed_kept_back_from_the_hungry_makes_next_harvest_better(state):
+    from sankhara.sim import nation
+
+    state.nation.known["cultivation"] = "family_plots"
+    hunger = _matter(state, "hunger")
+    assert "keep_seed" in hunger.answers
+    _do(state, hunger, "keep_seed")
+    assert state.nation.seed_kept == state.year
+    assert nation.SEED_KEPT_HARVEST > 1
