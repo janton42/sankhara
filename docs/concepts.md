@@ -198,3 +198,12 @@ position has changed relative to where they were in the previous life.
 things, and actions that aren't clearly "bad" by modern standards. All the current
 action choices are "good" or nothing. There's no "bad" action to take. The choices
 should not all clearly be "good" or "bad", but some can be.
+
+## People Interactions
+Use the spatial map as the primary view and a small relationship graph as a secondary, person-centered view, with the two linked.
+
+The map fits because villages and tribes are territorial, and the game is meant to grow into an empire builder. Villages appear as places, tribes as regions that contain them, and the nation as the whole. Zooming out moves the player’s attention from the individual to the group without changing the view. A full relationship graph would work against this, since it becomes unreadable past a few dozen nodes and shows nothing about place.
+
+The graph should be an ego network: the current character at the center, close family and the few NPCs with strong ties (friends, rivals, enemies) around them, and village and tribe drawn as enclosing outlines rather than as nodes. That keeps it small enough to read and keeps the individual focus the game has now. Indifferent NPCs simply do not appear, which handles the statistical tier of the population without extra work.
+
+The link between the two is selection: choosing a person on the map highlights their ties as lines to other places, and choosing a place on the graph jumps to it on the map. Relationship quality can be shown through line style and proximity instead of numbers or labels, which stays consistent with the felt-only approach to karma and tendencies.
