@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from sankhara.sim import actions, discoveries, events, game, people, save, tendencies
 from sankhara.sim.state import EventInstance, GameState
 from sankhara.sim.stations import ACTION_SLOTS, ADULT_AGE, rebirth_weights, station_title
@@ -860,3 +862,98 @@ def test_respected_lives_often_come_to_lead(play):
         if led:
             break
     assert led
+
+
+# --- ambition, and grudges that outlive a feud ------------------------------------
+
+
+def _other_adult(state, *exclude):
+    return next(
+        c
+        for c in state.living()
+        if c.id not in {x.id for x in exclude}
+        and c.age(state.year) >= 20
+        and c.family_name not in {x.family_name for x in exclude}
+    )
+
+
+def test_those_who_would_follow_someone_weigh_in_their_bid_to_lead(state):
+    leader = _living_leader(state)
+    me = _other_adult(state, leader)
+    me.means.set("regard", 70)
+    leader.means.set("regard", 100)
+    alone = people.bid_chance(state, me)
+    for c in state.living():
+        if c.age(state.year) >= ADULT_AGE and c not in (me, leader):
+            c.means.set("regard", 30)
+            c.adjust_affinity(me.id, 0.6)
+    assert people.bid_chance(state, me) > alone
+
+
+def test_an_ambitious_rival_asks_the_people_to_follow_them(state):
+    from sankhara.sim import npc, projects
+
+    leader = _living_leader(state)
+    other = _other_adult(state, leader)
+    other.means.set("regard", 200)
+    other.tendencies["ambitious"] = 0.4
+    leader.means.set("regard", 20)
+    assert npc.would_bid(state) is other
+    rng = state.rng()
+    line = next(filter(None, (npc._bid(state, other, rng) for _ in range(200))), None)
+    assert line and line.startswith(f"{other.full_name} stood before the people")
+    if line.endswith("They did."):
+        assert state.nation.leader_id == other.id
+    else:
+        assert other.means.get("regard") < 200 and leader.feels(other.id) < 0
+        assert line in projects.player_notes(state)  # the leader is told
+
+
+def test_grudges_cool_the_families_and_pass_to_the_children(state):
+    a = state.player
+    b = _other_adult(state, a)
+    a.adjust_affinity(b.id, -0.8)
+    plain = people.feels(state, a, b)
+    state.nation.grudges[people.grudge_key(a.family_name, b.family_name)] = state.year
+    assert people.grudge(state, a.family_name, b.family_name)
+    assert people.feels(state, b, a) < b.feels(a.id) and people.feels(state, a, b) <= plain
+    assert people.grudges_of(state, a.family_name) == [(b.family_name, state.year)]
+    parent = {"mother": a} if a.gender == "female" else {"father": a}
+    child = people.create_character(state, "hunter", a.settlement_id, state.year, **parent)
+    assert child.feels(b.id) == pytest.approx(-0.8 * people.INHERITED_FEELING)
+    state.year += people.GRUDGE_YEARS + 1
+    assert not people.grudge(state, a.family_name, b.family_name)  # forgotten in time
+
+
+def test_a_grudge_keeps_a_family_from_the_others_works(state):
+    from sankhara.sim import npc
+
+    leader = state.leader
+    other = _other_adult(state, leader)
+    warm = npc._liking(state, other, leader.id)
+    state.nation.grudges[people.grudge_key(other.family_name, leader.family_name)] = state.year
+    assert npc._liking(state, other, leader.id) < warm
+
+
+def test_a_feud_leaves_a_grudge_that_can_flare_again(state):
+    _quiet(state)
+    feud = events.EVENT_DEFS["feud"].build(state, state.player, state.rng())
+    a, b = feud.data["a"], feud.data["b"]
+    state.events.append(events.offer(state, state.player, feud))
+    state.plan = [_answer(feud, "side_with"), None, None]
+    game.end_year(state)
+    assert people.grudge(state, a, b)
+    if all(people.members(state, f) for f in (a, b)):
+        builds = (
+            events.EVENT_DEFS["feud"].build(state, state.player, state.rng()) for _ in range(40)
+        )
+        assert any("old grudge" in e.text and {e.data["a"], e.data["b"]} == {a, b} for e in builds)
+    _quiet(state)
+    for _ in range(20):  # judgement usually makes peace, and the grudge with it
+        again = _matter(state, "feud", data={"a": a, "b": b})
+        state.plan = [_answer(again, "judge_feud"), None, None]
+        game.end_year(state)
+        _quiet(state)
+        if not people.grudge(state, a, b):
+            break
+    assert not people.grudge(state, a, b)

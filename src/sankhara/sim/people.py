@@ -65,7 +65,49 @@ def create_character(
     for parent in (mother, father):
         if parent:
             parent.children.append(char.id)
+            # friendships and grudges pass, in part, to the children
+            for other, feeling in parent.affinity.items():
+                known = state.character(int(other))
+                if known and known.alive:
+                    char.adjust_affinity(other, INHERITED_FEELING * feeling)
     return state.add_character(char)
+
+
+# --- grudges between families -------------------------------------------------
+
+GRUDGE_YEARS = 60  # how long a grudge is remembered if nothing renews it
+GRUDGE_COOL = 0.4  # how much colder members of feuding families are to each other
+INHERITED_FEELING = 0.25  # how much of each parent's feelings a child is born with
+
+
+def grudge_key(a, b):
+    return "|".join(sorted((a, b)))
+
+
+def grudge(state, a, b):
+    """Whether these two families bear each other a grudge."""
+    if a == b:
+        return False
+    year = state.nation.grudges.get(grudge_key(a, b))
+    return year is not None and state.year - year <= GRUDGE_YEARS
+
+
+def grudges_of(state, family_name):
+    """The families this one has fallen out with, as (other family, year) pairs."""
+    out = []
+    for key, year in state.nation.grudges.items():
+        a, b = key.split("|")
+        if family_name in (a, b) and grudge(state, a, b):
+            out.append((b if a == family_name else a, year))
+    return out
+
+
+def feels(state, who, other):
+    """How `who` feels toward `other`, counting what stands between their families."""
+    feeling = who.feels(other.id)
+    if grudge(state, who.family_name, other.family_name):
+        feeling -= GRUDGE_COOL
+    return max(-1.0, feeling)
 
 
 def child_role(state, parent, rng):
@@ -274,6 +316,58 @@ def _strength(char):
 def standing(char):
     """How much the people look to someone."""
     return char.means.get("regard") + (ELDER_STANDING if char.is_elder else 0)
+
+
+# --- asking the people to follow --------------------------------------------------
+
+FOLLOWER_WEIGHT = 0.25  # how much those who would follow someone add to their standing
+BID_LOST_REGARD = 0.8  # what is left of one's standing after the people did not follow
+
+
+def leader_failing(state):
+    leader = state.leader
+    return leader is None or (
+        leader.age(state.year) >= STEP_ASIDE_AGE or leader.health < FRAIL_HEALTH
+    )
+
+
+def support(state, char, against):
+    """The standing of the grown people who would follow `char` rather than `against`."""
+    total = 0.0
+    for c in state.living():
+        if c is char or c is against or c.age(state.year) < ADULT_AGE:
+            continue
+        if feels(state, c, char) > feels(state, c, against) + 0.1:
+            total += standing(c)
+    return total
+
+
+def bid_chance(state, char):
+    """How likely the people are to follow someone who asks them to: by how they stand
+    beside the leader, counting those each could draw after them, and more if the leader
+    is failing."""
+    leader = state.leader
+    mine = standing(char)
+    theirs = standing(leader) if leader else 1.0
+    if leader is not None:
+        mine += FOLLOWER_WEIGHT * support(state, char, leader)
+        theirs += FOLLOWER_WEIGHT * support(state, leader, char)
+    ratio = mine / max(1.0, theirs)
+    failing = 0.3 if leader_failing(state) else 0.0
+    return min(0.85, 0.05 + 0.6 * max(0.0, ratio - 0.8) + failing)
+
+
+def bid_to_lead(state, char, rng):
+    """Someone asks the people to follow them. Returns whether they did; if not, the
+    asker's standing suffers and the leader thinks less of them."""
+    leader = state.leader
+    if rng.random() < bid_chance(state, char):
+        make_leader(state, char)
+        return True
+    char.means.set("regard", char.means.get("regard") * BID_LOST_REGARD)
+    if leader:
+        leader.adjust_affinity(char.id, -0.3)
+    return False
 
 
 def _heir(state, old):
