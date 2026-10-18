@@ -628,11 +628,15 @@ game starts with a small band rather than a kingdom; this is how that is built:<
 </tr>
 <tr>
 <td>Development like Civilization, but not prescribed</td>
-<td><code>discoveries.py</code>: about 30 ideas in four domains (land, craft, lore, kin). One is available only when its prerequisites <em>and circumstances</em> hold (water nearby, grassland, game, having met another people, enough people). Insight comes from ordinary life every year, from someone working at it (the <code>pursue</code> project, one idea at a time), from chance events, and from other peoples.</td>
+<td><code>discoveries.py</code>: about 45 ideas in four domains (land, craft, lore, kin), in two eras. The first thirty or so (fire to planting, herding, a council, exchange, judgement) take 200–300 years; the later ones (<code>LATER_IDEAS</code>: the plough, copper, the wheel, walls, writing, tribute, those who fight, a market, the town...) need those first, and more people or trouble from outside, so they come over the next 150–200 years. One is available only when its prerequisites <em>and circumstances</em> hold (water nearby, grassland, hills, having met another people, an unfriendly neighbour, enough people). Insight comes from ordinary life every year, from someone working at it (the <code>pursue</code> project, one idea at a time), from chance events, and from other peoples. Walls and those who fight add <code>defence</code>, which makes raids rarer; once the people know what a town is, villages above <code>TOWN_SIZE</code> become towns.</td>
 </tr>
 <tr>
 <td>Ideas settle into forms</td>
 <td>Discoveries like customs of giving, planting, exchange, how leaders are chosen, or judgement have several forms with different effects (<code>Form</code>). The player chooses if they worked it out, or if they lead and it is a matter of custom. Otherwise the people's own inclinations decide. A choice strengthens its tags and weighs (lightly) on karma.</td>
+</tr>
+<tr>
+<td>Policy: customs can be settled anew</td>
+<td>A custom that has stood <code>RESETTLE_AFTER</code> years can be questioned (<code>discoveries.customs</code>). "Change how the people ..." is a people's work (<code>reform</code>) anyone respected can lead, help with or call others to; NPCs take it up mostly when the people are restless. When it is done the custom comes up again (<code>GameState.due_choices</code>, settled in <code>game._settle_customs_anew</code>): the player decides if they led the work or lead the people (and it is a matter of custom), otherwise speaks for a form; during a childhood the people's leanings decide, weighed by whoever called for it. <code>discoveries.resettle</code> undoes what the old form set once (a title, the rule of succession, a kind of exchange) before applying the new.</td>
 </tr>
 <tr>
 <td>Roles appear as the people change</td>
@@ -680,8 +684,8 @@ game starts with a small band rather than a kingdom; this is how that is built:<
 <ul>
 <li><strong><code>state.py</code></strong>: dataclasses (<code>GameState</code>, <code>Nation</code>, <code>Settlement</code>, <code>Neighbour</code>, <code>Project</code>, <code>Character</code>, <code>Soul</code>, <code>Budget</code>, <code>EventInstance</code>) with <code>to_dict</code>/<code>from_dict</code>. The RNG state is saved too, so a loaded game plays on identically.</li>
 <li><strong><code>game.py</code></strong>: founding the people, the options for a year, the yearly loop and its interrupts, choosing a custom's form, death and the next life.</li>
-<li><strong><code>discoveries.py</code></strong>: the web of ideas, their forms and combined effects, yearly insight.</li>
-<li><strong><code>projects.py</code></strong>: multi-year undertakings: working at ideas, ranging further, new camps, gathering places, store pits, fields, teaching, raising a child, apprentices, friendship and trade with other peoples...</li>
+<li><strong><code>discoveries.py</code></strong>: the web of ideas, their forms and combined effects, yearly insight, and settling a custom anew.</li>
+<li><strong><code>projects.py</code></strong>: multi-year undertakings: working at ideas, ranging further, new camps, gathering places, store pits, fields, teaching, changing a custom, raising a child, apprentices, friendship and trade with other peoples...</li>
 <li><strong><code>actions.py</code></strong>: one-year deeds: lasting cares for each role, and the answers to matters at hand.</li>
 <li><strong><code>events.py</code></strong>: news and matters at hand (what lasts with the people's state, what comes by chance, what each role meets), their answers, yearly generation and resolution.</li>
 <li><strong><code>nation.py</code></strong>: each camp's food from its land (falling as it fills up), hunger and growth, what goes into the common stores, cohesion (which strains as the people grow), plenty and lore; each tracked family's means.</li>
