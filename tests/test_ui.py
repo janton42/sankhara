@@ -171,7 +171,18 @@ def test_descriptions_keep_the_game_s_secrets():
         assert word not in text
 
 
+def test_those_around_you_are_shown_with_how_they_feel():
+    view, _ = make_view()
+    state = view.state
+    who, _ = game.around_you(state)[0]
+    who.adjust_affinity(state.player_id, 0.9)
+    view.refresh()
+    text = view.character.around_label.text
+    assert who.full_name in text and "a friend to you" in text
+
+
 def test_words():
+    assert words.feeling_word(-0.8) == "bears you a grudge"
     assert words.health_word(90) == "hale"
     assert words.health_word(5) == "failing"
     assert words.cohesion_word(10) == "torn"

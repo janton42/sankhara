@@ -35,6 +35,7 @@ from sankhara.ui.words import (
     budget_text,
     cohesion_word,
     cost_text,
+    feeling_word,
     food_word,
     health_word,
     lore_word,
@@ -96,6 +97,7 @@ class CharacterPanel(BoxLayout):
         self.add_widget(self.who_label)
         self.means_label = _section(self, "Means")
         self.family_label = _section(self, "Family")
+        self.around_label = _section(self, "Around you")
         self.people_label = _section(self, "Your people")
         self.knowledge_button = ThemedButton(text="What we know", size_hint_y=None, height=36)
         self.knowledge_button.bind(on_release=lambda *_: self.show_knowledge())
@@ -125,6 +127,15 @@ class CharacterPanel(BoxLayout):
             )
         else:
             self.family_label.text = muted("You have no living family.")
+        around = game.around_you(state)
+        if around:
+            self.around_label.text = "\n".join(
+                f"{c.full_name}, {station_title(c, nation).lower()}  ·  "
+                + muted(feeling_word(feeling))
+                for c, feeling in around
+            )
+        else:
+            self.around_label.text = muted("You keep to yourself.")
 
         leader = state.leader
         if leader and not leader.is_player:

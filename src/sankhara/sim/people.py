@@ -127,6 +127,11 @@ def family_of(state, char):
     return out
 
 
+def members(state, family_name):
+    """The living, tracked people of a family."""
+    return [c for c in state.living() if c.family_name == family_name]
+
+
 def siblings(state, char):
     parent = state.character(char.mother_id) or state.character(char.father_id)
     if not parent:
