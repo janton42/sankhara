@@ -14,7 +14,7 @@ weight. Meeting it guarantees nothing. Outcomes are deliberately not fair.
 
 from dataclasses import dataclass
 
-from sankhara.sim import discoveries
+from sankhara.sim import discoveries, say, tendencies
 from sankhara.sim.actions import ACTIONS, could_lead, open_to
 from sankhara.sim.nation import adjust_settlements, people_scale, refresh_averages
 from sankhara.sim.people import (
@@ -555,11 +555,70 @@ def _stranger(state, char, rng):
 
 
 def _stranger_resolve(state, event, taken, rng):
-    welcomed = "welcome_stranger" in event.data.get("taken_with", [])
+    taken_with = event.data.get("taken_with", [])
+    welcomed = "welcome_stranger" in taken_with
     if welcomed and rng.random() < 0.12:
         state.player.means.set("food", state.player.means.get("food") * 0.7)
         return "In the morning the stranger was gone, and so was some of your food."
-    return None
+    if say.has_say(state, state.player):
+        return None
+    # others decide; the player's word carries by their standing
+    deciders = [c for c in say.deciders_of(state, state.player.settlement_id) if not c.is_player]
+    lean = sum(
+        tendencies.affinity(c.tendencies, ("generous", "caring"))
+        - tendencies.affinity(c.tendencies, ("harsh", "acquisitive"))
+        for c in deciders
+    ) / max(1, len(deciders))
+    voice = min(0.4, 0.1 + state.player.means.get("regard") / 100)
+    if "speak_for_stranger" in taken_with:
+        lean += voice
+    elif "speak_against_stranger" in taken_with:
+        lean -= voice
+    who = deciders_word(deciders)
+    if rng.random() < 0.5 + lean:
+        if rng.random() < 0.35:
+            options = discoveries.available(state)
+            if options:
+                discoveries.add_insight(state, rng.choice(options).id, 15)
+        return f"{who} took the stranger in."
+    return f"{who} sent the stranger on."
+
+
+def deciders_word(deciders):
+    if not deciders:
+        return "The people"
+    if len(deciders) == 1:
+        return deciders[0].full_name
+    return "The elders" if all(c.is_elder for c in deciders) else "Those who decide"
+
+
+def _newcomers(state, char, rng):
+    camp = state.settlement(char.settlement_id) or state.seat
+    met = [n for n in state.neighbours.values() if n.met]
+    people = rng.choice(met).name if met and rng.random() < 0.5 else ""
+    whence = f"of the {people}" if people else "from far off"
+    return EventInstance(
+        "newcomers",
+        f"A family {whence} asks to settle at {camp.name}.",
+        settlement_id=camp.id,
+        data={"people": people, "camp": camp.name},
+    )
+
+
+def _claim(kind, text):
+    """A role matter about what is whose, with a known family of the player's camp."""
+
+    def build(state, char, rng):
+        near = [c for c in _neighbours_of(state, char) if c.family_name != char.family_name]
+        if not near:
+            return None
+        who = rng.choice(near)
+        family = who.family_name
+        return EventInstance(
+            kind, text.format(family=family), target_id=who.id, data={"family": family}
+        )
+
+    return build
 
 
 def _lost_child(state, char, rng):
@@ -840,11 +899,46 @@ EVENTS = [
     ),
     # near you
     EventDef(
+        "newcomers",
+        lambda s, c: 0.08 if say.scale(s) == "town" and say.has_say(s, c) else 0.0,
+        _newcomers,
+        answers=("take_in_family", "turn_away_family"),
+        expects=("take_in_family", "turn_away_family"),
+        penalty=0.03,
+    ),
+    EventDef(
+        "grove",
+        _role("gatherer", chance=0.15),
+        _claim("grove", "The {family} family say the nut grove near the camp is theirs alone."),
+        answers=("share_grove", "gather_anyway", "leave_grove"),
+    ),
+    EventDef(
+        "traps",
+        _role("fisher", chance=0.15),
+        _claim("traps", "Someone has been taking fish from your traps. You suspect the {family}s."),
+        answers=("watch_traps", "set_more", "empty_theirs"),
+    ),
+    EventDef(
+        "boundary",
+        _role("planter", chance=0.15),
+        _claim(
+            "boundary",
+            "The stones between your field and the {family} family's have been moved.",
+        ),
+        answers=("take_to_judgement", "move_further", "let_it_be"),
+    ),
+    EventDef(
+        "stray",
+        _role("herder", chance=0.15),
+        _claim("stray", "A beast from the {family} family's herd has strayed into yours."),
+        answers=("return_stray", "keep_stray", "ask_reward"),
+    ),
+    EventDef(
         "stranger",
-        lambda s, c: 0.07,
+        lambda s, c: 0.07 if say.scale(s) != "town" else 0.0,
         _stranger,
         _stranger_resolve,
-        answers=("welcome_stranger", "send_on"),
+        answers=("welcome_stranger", "send_on", "speak_for_stranger", "speak_against_stranger"),
         expects=("welcome_stranger",),
         penalty=0.05,
     ),
