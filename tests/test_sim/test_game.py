@@ -840,11 +840,15 @@ def test_anyone_respected_can_ask_to_lead(state):
     me.means.set("regard", 300)
     leader.means.set("regard", 5)
     assert talk_of_leading(state, me) > 0
-    _quiet(state)
-    talk = _matter(state, "could_lead")
-    assert talk.answers == ["stand_forward", "back_leader"]
-    assert game.choose(state, 0, _answer(talk, "stand_forward"))
-    report = game.end_year(state)
+    for _ in range(10):  # the people follow most of the time, not always
+        _quiet(state)
+        talk = _matter(state, "could_lead")
+        assert talk.answers == ["stand_forward", "back_leader"]
+        assert game.choose(state, 0, _answer(talk, "stand_forward"))
+        report = game.end_year(state)
+        if state.nation.leader_id == me.id:
+            break
+        me.means.set("regard", 300)
     assert state.nation.leader_id == me.id
     assert "The people have turned to you to lead them." in report.interrupts
 
@@ -1016,3 +1020,60 @@ def test_you_see_who_would_follow_whom_and_old_grudges(state):
     if follower.family_name != me.family_name:
         state.nation.grudges[people.grudge_key(follower.family_name, me.family_name)] = state.year
         assert any("at odds" in t for t in game.ties(state, follower))
+
+
+def _become(state, char):
+    state.player.is_player = False
+    char.is_player = True
+    state.player_id = char.id
+    return char
+
+
+def test_a_leader_can_go_and_hear_out_a_divided_camp(state):
+    leader, r = _a_rival_with_followers(state)
+    _become(state, leader)
+    events.divided_year(state)
+    _quiet(state)
+    matter = events.offer(state, leader, events.EVENT_DEFS["divided"].build(state, leader, None))
+    state.events.append(matter)
+    assert matter.expected and "hear_them_out" in matter.answers
+    assert "back_rival" not in matter.answers
+    follower = next(
+        c for c in people.faction(state, r, leader) if c.settlement_id == r.settlement_id
+    )
+    before = follower.feels(leader.id)
+    leader.means.add({"food": 20})
+    state.plan = [_answer(matter, "hear_them_out"), None, None]
+    game.end_year(state)
+    assert follower.feels(leader.id) > before
+
+
+def test_a_rival_can_stand_down_and_mend_the_division(state):
+    leader, r = _a_rival_with_followers(state)
+    _become(state, r)
+    events.divided_year(state)
+    _quiet(state)
+    matter = events.offer(state, r, events.EVENT_DEFS["divided"].build(state, r, None))
+    state.events.append(matter)
+    assert "you" in matter.text and "back_rival" not in matter.answers
+    assert {"back_leader", "stand_forward"} <= set(matter.answers)
+    assert not matter.expected
+    follower = people.faction(state, r, leader)[0]
+    before = follower.feels(r.id)
+    state.plan = [_answer(matter, "back_leader"), None, None]
+    game.end_year(state)
+    assert follower.feels(r.id) < before
+
+
+def test_a_marriage_ends_a_feud_and_its_grudge(state):
+    _quiet(state)
+    feud = events.EVENT_DEFS["feud"].build(state, state.player, state.rng())
+    a, b = feud.data["a"], feud.data["b"]
+    state.nation.grudges[people.grudge_key(a, b)] = state.year
+    state.events.append(events.offer(state, state.player, feud))
+    assert "join_families" in feud.answers
+    state.player.means.add({"food": 20, "regard": 20})
+    state.plan = [_answer(feud, "join_families"), None, None]
+    game.end_year(state)
+    assert not people.grudge(state, a, b)
+    assert any("were wed" in line for line in state.log[-30:])

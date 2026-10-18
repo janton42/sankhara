@@ -22,6 +22,7 @@ from sankhara.sim.nation import adjust_settlements, advance, clamp, land_richnes
 from sankhara.sim.people import (
     LEADER_AGE,
     bid_to_lead,
+    faction,
     family_of,
     members,
     standing,
@@ -70,6 +71,9 @@ class Action:
 
 
 OWN_SHARE = 0.5
+HEARD_OUT = 0.15  # how much a rival's followers warm to a leader who comes to hear them
+STOOD_DOWN = 0.25  # how much a rival's followers cool toward one who stands down
+MARRIAGE_STANDING = 10  # standing needed to be heard offering a marriage between families
 
 
 def budget_for(state, char, action):
@@ -391,6 +395,14 @@ def _make_peace(ctx):
     return "You went between the two families, carrying words."
 
 
+def _join_families(ctx):
+    data = ctx.event.data if ctx.event else {}
+    for name in (data.get("a"), data.get("b")):
+        for c in members(ctx.state, name) if name else []:
+            c.adjust_affinity(ctx.char.id, 0.15)
+    return "You went between the two families with gifts, and spoke of a marriage."
+
+
 def _side_with(ctx):
     _gain(ctx, "regard", 2)
     _people(ctx, cohesion=-1)
@@ -407,8 +419,26 @@ def _side_with(ctx):
 
 
 def _rival_of(ctx):
-    who = ctx.state.character(ctx.event.target_id) if ctx.event else None
+    """Who the matter is about, or, for a deed done without one, whoever the people are
+    divided over."""
+    rid = ctx.event.target_id if ctx.event else ctx.state.nation.divided
+    who = ctx.state.character(rid) if rid else None
     return who if who and who.alive else None
+
+
+def _hear_them_out(ctx):
+    r = _rival_of(ctx)
+    if r is None:
+        return "There was no one to hear out."
+    leader = ctx.state.leader
+    for c in faction(ctx.state, r, leader) if leader else []:
+        if c.settlement_id == r.settlement_id:
+            c.adjust_affinity(ctx.char.id, HEARD_OUT)
+    _people(ctx, cohesion=1)
+    adjust_settlements(ctx.state, cohesion=2, only=r.settlement_id)
+    camp = ctx.state.settlement(r.settlement_id)
+    where = camp.name if camp else "their camp"
+    return f"You went to {where} and sat at {r.name}'s fire, and heard out all who came."
 
 
 def _win_over(ctx):
@@ -478,6 +508,12 @@ def _back_leader(ctx):
     _people(ctx, cohesion=1)
     _gain(ctx, "regard", 1)
     r = _rival_of(ctx)
+    if r is ctx.char and leader is not None:
+        # the rival stands down: those who would have followed them turn back
+        for c in faction(ctx.state, r, leader):
+            c.adjust_affinity(r.id, -STOOD_DOWN)
+        leader.adjust_affinity(r.id, 0.3)
+        return f"You told the people you would not stand against {leader.name}."
     if r is not None and leader is not None and r.id != leader.id:
         r.adjust_affinity(ctx.char.id, -0.2)
     if leader:
@@ -740,6 +776,10 @@ def _stores_have(amount):
 
 def _has_leader(state, char):
     return state.leader is not None and state.leader.id != char.id
+
+
+def _could_bring_gifts(state, char):
+    return char.means.get("regard") >= MARRIAGE_STANDING
 
 
 def _not_leading(state, char):
@@ -1116,6 +1156,17 @@ ACTION_LIST = [
         -0.03,
         _side_with,
     ),
+    Action(
+        "join_families",
+        "Offer a marriage between the {a} and {b} families",
+        "Gifts from both, a son of one for a daughter of the other: kin do not feud.",
+        (),
+        ("generous", "caring"),
+        0.04,
+        _join_families,
+        {"food": 10, "regard": 2},
+        requires=_could_bring_gifts,
+    ),
     # who leads
     Action(
         "stand_forward",
@@ -1158,6 +1209,17 @@ ACTION_LIST = [
         ("contemplative",),
         0.0,
         _stay_out,
+    ),
+    Action(
+        "hear_them_out",
+        "Go to {rival}'s camp and hear them out",
+        "Sit at their fire, and listen to whoever would rather follow them.",
+        ("leader",),
+        ("caring", "contemplative"),
+        0.04,
+        _hear_them_out,
+        {"food": 4, "regard": 1},
+        requires=_has_food(4),
     ),
     Action(
         "win_over",

@@ -24,6 +24,7 @@ from sankhara.sim.people import (
     grudge,
     grudge_key,
     leader_failing,
+    marry,
     members,
     standing,
     support,
@@ -179,6 +180,27 @@ def _feud(state, char, rng):
     return EventInstance("feud", text.format(a=a, b=b), data={"a": a, "b": b})
 
 
+def _joined(state, a, b, rng):
+    """A marriage ends a feud for good: the grudge is gone and the families warm to each
+    other. If each has someone grown and unwed, they are the ones who marry."""
+    state.nation.grudges.pop(grudge_key(a, b), None)
+    _estrange(state, a, b, -0.2)
+    unwed = [
+        [c for c in members(state, f) if c.spouse_id is None and not c.is_player] for f in (a, b)
+    ]
+    for one, other in ((unwed[0], unwed[1]), (unwed[1], unwed[0])):
+        men = [c for c in one if c.gender == "male" and c.age(state.year) >= ADULT_AGE]
+        women = [c for c in other if c.gender == "female" and c.age(state.year) >= ADULT_AGE]
+        if men and women:
+            man, woman = rng.choice(men), rng.choice(women)
+            marry(man, woman)
+            woman.family_name = man.family_name
+            return (
+                f"{man.full_name} and {woman.name} were wed, and the {a} and {b} families are kin."
+            )
+    return f"A son and daughter of the {a} and {b} families were wed, and the feud was ended."
+
+
 def _estrange(state, a, b, amount):
     """Members of two families think worse of each other."""
     for x in members(state, a):
@@ -189,7 +211,10 @@ def _estrange(state, a, b, amount):
 
 def _feud_resolve(state, event, taken, rng):
     a, b = event.data["a"], event.data["b"]
-    peacemaking = {"judge_feud", "make_peace"} & set(event.data.get("taken_with", []))
+    taken_with = set(event.data.get("taken_with", []))
+    if "join_families" in taken_with:
+        return _joined(state, a, b, rng)
+    peacemaking = {"judge_feud", "make_peace"} & taken_with
     if peacemaking and rng.random() < 0.8:
         state.nation.grudges.pop(grudge_key(a, b), None)
         return f"The {a} and {b} families made their peace."
@@ -262,6 +287,29 @@ def divided_year(state):
     if split:
         return f"The people are divided between {leader.full_name} and {r.full_name}."
     return "The people are of one mind again about who leads them."
+
+
+def _divided_build(state, char, rng):
+    r = state.character(state.nation.divided) if state.nation.divided else None
+    leader = state.leader
+    if r is None or not r.alive or leader is None or r is leader:
+        return None
+    if char is r:
+        text = f"The people are divided between {leader.name}, who leads them, and you."
+    elif char is leader:
+        text = f"The people are divided: many would rather follow {r.full_name}."
+    else:
+        text = f"The people are divided between {leader.name} and {r.full_name}."
+    return EventInstance(
+        "divided", text, target_id=r.id, data={"rival": r.name, "leader": leader.name}
+    )
+
+
+def _divided_resolve(state, event, taken, rng):
+    if taken or not event.expected:
+        return None
+    adjust_settlements(state, cohesion=-2)
+    return "The camps went on apart, and no one went between them."
 
 
 def _npc_rival(state, char):
@@ -623,6 +671,23 @@ EVENTS = [
         answers=("win_over", "make_room", "face_down"),
     ),
     EventDef(
+        "divided",
+        lambda s, c: 0.7 if s.nation.divided else 0.0,
+        _divided_build,
+        _divided_resolve,
+        answers=(
+            "hear_them_out",
+            "make_room",
+            "face_down",
+            "back_rival",
+            "back_leader",
+            "stand_forward",
+            "stay_out",
+        ),
+        expects=("hear_them_out", "make_room", "face_down"),
+        penalty=0.05,
+    ),
+    EventDef(
         "take_sides",
         lambda s, c: 0.12 if not _is_leader(c) and _npc_rival(s, c) else 0.0,
         _take_sides_build,
@@ -646,7 +711,7 @@ EVENTS = [
         lambda s, c: 0.04 + (0.08 if s.nation.cohesion < 45 else 0.0),
         _feud,
         _feud_resolve,
-        answers=("judge_feud", "make_peace", "side_with"),
+        answers=("judge_feud", "make_peace", "join_families", "side_with"),
         expects=("judge_feud",),
         penalty=0.06,
     ),
@@ -767,7 +832,13 @@ WHOLE_PEOPLE = {
     "raid",
     "beast",
 }
-LASTING = ("hunger", "discord", "low_stores", "plenty")  # matters that follow the people's state
+LASTING = (
+    "hunger",
+    "discord",
+    "low_stores",
+    "plenty",
+    "divided",
+)  # matters that follow the people's state
 MAX_EVENTS = 5
 
 
@@ -777,6 +848,8 @@ def offer(state, char, event):
     event.answers = [a for a in d.answers if open_to(state, char, ACTIONS[a])]
     event.expected = any(a in d.expects for a in event.answers)
     event.penalty = d.penalty if event.expected else 0.0
+    if event.kind == "divided" and event.target_id == char.id:
+        event.answers = [a for a in event.answers if a != "back_rival"]  # not for yourself
     if event.kind == "could_lead" and "back_leader" in event.answers:
         event.data.setdefault("leader", state.leader.name)
     return event
