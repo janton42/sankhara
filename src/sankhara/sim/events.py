@@ -22,8 +22,10 @@ from sankhara.sim.people import (
     ally,
     die,
     family_of,
+    feels,
     grudge,
     grudge_key,
+    in_laws,
     leader_failing,
     members,
     pick_match,
@@ -242,6 +244,10 @@ def _feud_resolve(state, event, taken, rng):
 
 OLD_GRUDGE_FLARES = 0.7  # a feud that flares between families with an old grudge
 RIVAL_SHARE = 0.6  # standing, relative to the leader's, at which someone is a rival to them
+KIN_SLIGHTED = 0.1  # how much kin by marriage cool when their need is ignored
+KIN_WARM = 0.1  # how warm kin must feel toward you to send help unasked
+KIN_GIFT = 8
+BARE_HEARTH = 15  # a family's food below which kin may send help
 MATCH_CHANCE = 0.3  # a year in which a family offers the unwed player a match
 DIVIDED_COHESION = 0.5  # a year's fraying while the people are divided
 FOLLOWERS_DRAWN = 0.05  # how much a rival's unanswered talk warms their camp toward them
@@ -317,6 +323,48 @@ def _match_build(state, char, rng):
         f"The {family} family would see you wed to {name}, aged {age}.",
         target_id=target,
         data={"match": name, "family": family, "age": age},
+    )
+
+
+def _kin_asks_build(state, char, rng):
+    kin = in_laws(state, char)
+    if not kin:
+        return None
+    family, _ = rng.choice(kin)
+    return EventInstance(
+        "kin_asks",
+        f"Your kin by marriage, the {family} family, are short of food and ask you for help.",
+        data={"family": family},
+    )
+
+
+def _kin_asks_resolve(state, event, taken, rng):
+    if taken:
+        return None
+    family = event.data["family"]
+    for c in members(state, family):
+        c.adjust_affinity(state.player_id, -KIN_SLIGHTED)
+    return f"The {family} family waited for help from you that never came."
+
+
+def _kin_warmth(state, char, kin):
+    return sum(feels(state, c, char) for c in kin) / len(kin)
+
+
+def _hearth_bare(state, char):
+    camp = state.settlement(char.settlement_id)
+    return char.means.get("food") < BARE_HEARTH or (camp is not None and _short(camp))
+
+
+def _kin_help_build(state, char, rng):
+    """Kin by marriage who think well of you send food when your hearth is bare."""
+    kin = [(f, k) for f, k in in_laws(state, char) if _kin_warmth(state, char, k) > KIN_WARM]
+    if not kin:
+        return None
+    family, _ = rng.choice(kin)
+    char.means.add({"food": KIN_GIFT})
+    return EventInstance(
+        "kin_help", f"The {family} family, your kin by marriage, sent food to your hearth."
     )
 
 
@@ -706,6 +754,20 @@ EVENTS = [
         lambda s, c: MATCH_CHANCE if _match_open(s, c) else 0.0,
         _match_build,
         answers=("accept_match", "refuse_match"),
+    ),
+    EventDef(
+        "kin_asks",
+        lambda s, c: (0.4 if _hungry(s) else 0.06) if c.is_player and in_laws(s, c) else 0.0,
+        _kin_asks_build,
+        _kin_asks_resolve,
+        answers=("share_with_kin", "refuse_kin"),
+        expects=("share_with_kin", "refuse_kin"),
+        penalty=0.04,
+    ),
+    EventDef(
+        "kin_help",
+        lambda s, c: 0.5 if c.is_player and _hearth_bare(s, c) else 0.0,
+        _kin_help_build,
     ),
     EventDef(
         "divided",

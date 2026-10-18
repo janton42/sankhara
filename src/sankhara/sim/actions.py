@@ -442,6 +442,25 @@ def _refuse_match(ctx):
     return f"You turned the {family} family's offer away. They took it ill."
 
 
+def _kin_family(ctx):
+    return ctx.event.data.get("family", "") if ctx.event else ""
+
+
+def _share_with_kin(ctx):
+    family = _kin_family(ctx)
+    for c in members(ctx.state, family):
+        c.adjust_affinity(ctx.char.id, 0.2)
+        c.means.add({"food": 2})
+    return f"You sent food to the {family} family. Kin look after kin."
+
+
+def _refuse_kin(ctx):
+    family = _kin_family(ctx)
+    for c in members(ctx.state, family):
+        c.adjust_affinity(ctx.char.id, -0.2)
+    return f"You told the {family} family you had nothing to spare."
+
+
 def _join_families(ctx):
     data = ctx.event.data if ctx.event else {}
     for name in (data.get("a"), data.get("b")):
@@ -1222,6 +1241,26 @@ ACTION_LIST = [
         ("contemplative",),
         0.0,
         _refuse_match,
+    ),
+    Action(
+        "share_with_kin",
+        "Send food to the {family} family",
+        "They are your kin now; what is yours is partly theirs.",
+        (),
+        ("generous", "caring"),
+        0.04,
+        _share_with_kin,
+        {"food": 6},
+        requires=_has_food(6),
+    ),
+    Action(
+        "refuse_kin",
+        "Keep your food for your own",
+        "Your own hearth comes first.",
+        (),
+        ("harsh",),
+        -0.02,
+        _refuse_kin,
     ),
     Action(
         "join_families",

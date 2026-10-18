@@ -173,6 +173,19 @@ def pick_match(state, char, rng):
     return rng.choices(people, weights)[0]
 
 
+def in_laws(state, char):
+    """The families joined to this one by marriage, with their living tracked members."""
+    out = []
+    for key in state.nation.alliances:
+        a, b = key.split("|")
+        if char.family_name in (a, b) and allied(state, a, b):
+            other = b if a == char.family_name else a
+            kin = [c for c in members(state, other) if c is not char]
+            if kin:
+                out.append((other, kin))
+    return out
+
+
 def wed(state, a, b):
     """Two people of the people marry: the wife joins the husband's family (unless she is
     the one the player lives as), and their families become allies."""
