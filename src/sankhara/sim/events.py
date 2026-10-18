@@ -17,9 +17,18 @@ from dataclasses import dataclass
 from sankhara.sim import discoveries
 from sankhara.sim.actions import ACTIONS, could_lead, open_to
 from sankhara.sim.nation import adjust_settlements, people_scale, refresh_averages
-from sankhara.sim.people import FRAIL_HEALTH, STEP_ASIDE_AGE, die, family_of, standing
+from sankhara.sim.people import (
+    FRAIL_HEALTH,
+    LEADER_AGE,
+    STEP_ASIDE_AGE,
+    die,
+    family_of,
+    members,
+    standing,
+)
 from sankhara.sim.peoples import raid_chance
 from sankhara.sim.state import EventInstance
+from sankhara.sim.stations import ADULT_AGE
 from sankhara.sim.world import camp_tiles, is_watery
 
 HUNGER_THRESHOLD = 0.05  # a shortfall bigger than this share of need is felt as hunger
@@ -138,10 +147,24 @@ def _discord_resolve(state, event, taken, rng):
 
 
 def _feud(state, char, rng):
+    """Two families fall out: known ones from the player's camp when there are enough of
+    them, so the grudge is carried by people the player knows."""
     from sankhara.entities.namer import make_family_name
 
-    a = make_family_name(state.nation.culture, rng)
-    b = make_family_name(state.nation.culture, rng)
+    names = sorted(
+        {
+            c.family_name
+            for c in state.living()
+            if c.settlement_id == char.settlement_id
+            and c.family_name != char.family_name
+            and c.age(state.year) >= ADULT_AGE
+        }
+    )
+    if len(names) >= 2:
+        a, b = rng.sample(names, 2)
+    else:
+        a = make_family_name(state.nation.culture, rng)
+        b = make_family_name(state.nation.culture, rng)
     return EventInstance(
         "feud",
         f"The {a} and {b} families are at each other's throats over a broken promise.",
@@ -149,18 +172,100 @@ def _feud(state, char, rng):
     )
 
 
+def _estrange(state, a, b, amount):
+    """Members of two families think worse of each other."""
+    for x in members(state, a):
+        for y in members(state, b):
+            x.adjust_affinity(y.id, -amount)
+            y.adjust_affinity(x.id, -amount)
+
+
 def _feud_resolve(state, event, taken, rng):
+    a, b = event.data["a"], event.data["b"]
     peacemaking = {"judge_feud", "make_peace"} & set(event.data.get("taken_with", []))
     if peacemaking and rng.random() < 0.8:
-        return f"The {event.data['a']} and {event.data['b']} families made their peace."
+        return f"The {a} and {b} families made their peace."
     if not taken and not event.expected:
         return None  # the player stood aside; it ran its own course
+    _estrange(state, a, b, 0.3)
     if rng.random() < 0.4:
-        state.seat.population = max(12.0, state.seat.population - 1)
+        men = [c for c in members(state, a) if c.gender == "male" and not c.is_player]
+        if men:
+            victim = rng.choice(men)
+            die(state, victim, "a feud")
+            who = victim.full_name
+        else:
+            state.seat.population = max(12.0, state.seat.population - 1)
+            who = f"A man of the {a} family"
         adjust_settlements(state, cohesion=-3)
-        return f"A man of the {event.data['a']} family was killed. Nobody will say who did it."
+        return f"{who} was killed. Nobody will say who did it."
     adjust_settlements(state, cohesion=-1)
-    return f"The {event.data['a']} and {event.data['b']} families no longer speak."
+    return f"The {a} and {b} families no longer speak."
+
+
+# --- who would lead ----------------------------------------------------------------
+
+RIVAL_SHARE = 0.6  # standing, relative to the leader's, at which someone is a rival to them
+RIVAL_REGARD = 15
+
+
+def rival(state):
+    """Someone the people might look to instead of the leader: the most respected grown
+    person who is not the leader, if they come near enough to the leader's standing."""
+    leader = state.leader
+    if leader is None:
+        return None
+    others = [
+        c
+        for c in state.living()
+        if c.id != leader.id
+        and c.age(state.year) >= LEADER_AGE
+        and c.means.get("regard") >= RIVAL_REGARD
+        and state.nation.succession != "lineage"
+    ]
+    if not others:
+        return None
+    best = max(others, key=standing)
+    return best if standing(best) >= RIVAL_SHARE * standing(leader) else None
+
+
+def _npc_rival(state, char):
+    r = rival(state)
+    return r if r is not None and not r.is_player else None
+
+
+def _rival_build(state, char, rng):
+    r = _npc_rival(state, char)
+    if r is None:
+        return None
+    return EventInstance(
+        "rival",
+        f"{r.full_name} has begun to say openly that they, not you, should lead the people.",
+        target_id=r.id,
+        data={"rival": r.name},
+    )
+
+
+def _rival_resolve(state, event, taken, rng):
+    r = state.character(event.target_id)
+    if taken or r is None or not r.alive:
+        return None
+    r.means.add({"regard": 2})
+    adjust_settlements(state, cohesion=-1)
+    return f"Talk of {r.name} leading went unanswered, and grew."
+
+
+def _take_sides_build(state, char, rng):
+    r = _npc_rival(state, char)
+    leader = state.leader
+    if r is None or leader is None or r.id == char.id:
+        return None
+    return EventInstance(
+        "take_sides",
+        f"{r.full_name} asks you to speak for them against {leader.name}, who leads the people.",
+        target_id=r.id,
+        data={"rival": r.name, "leader": leader.name},
+    )
 
 
 def _knows_fighting(state):
@@ -464,6 +569,19 @@ EVENTS = [
         lambda s, c: 0.4 if _talk_of_leading(s, c) else 0.0,
         _could_lead_build,
         answers=("stand_forward", "back_leader"),
+    ),
+    EventDef(
+        "rival",
+        lambda s, c: 0.3 if _is_leader(c) and _npc_rival(s, c) else 0.0,
+        _rival_build,
+        _rival_resolve,
+        answers=("win_over", "make_room", "face_down"),
+    ),
+    EventDef(
+        "take_sides",
+        lambda s, c: 0.12 if not _is_leader(c) and _npc_rival(s, c) else 0.0,
+        _take_sides_build,
+        answers=("back_rival", "back_leader", "stay_out"),
     ),
     # chance
     EventDef("lean_year", lambda s, c: 0.09, _lean_year),
