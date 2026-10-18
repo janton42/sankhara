@@ -178,3 +178,23 @@ like everything else.
 ## Play-test notes
 
 New feedback goes here; it is folded into the sections above once built.
+Needs:
+- More action choices that grow more complex as the society becomes more
+complex.
+- Actions that are relevant to the station. e.g. - the leader might have
+a say in who stays and who goes in a small village, but that isn't something
+they would decide once the group is large enough, or the culture is developed
+enough. Also, if the leader is deciding who stays near the fire, then why does
+a hunter also have that choice? The choices available need to match the station
+in some way.
+- The "what we know" is a good start but needs work. Visually it's very bad.
+I would prefer some kind of graph with nodes and edges showing how different
+developments are interdependent and relatively advanced or not.
+- The "people near you", family, and general "tribe" needs more of a visual connection
+for players to make sense of it. Lists of names don't show how villages and people
+are connected, so when rebirth happens, it's impossible to tell how the players
+position has changed relative to where they were in the previous life.
+- There needs to be negative actions, like choosing violence, starting fights, stealing
+things, and actions that aren't clearly "bad" by modern standards. All the current
+action choices are "good" or nothing. There's no "bad" action to take. The choices
+should not all clearly be "good" or "bad", but some can be.
