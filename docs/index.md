@@ -8,14 +8,15 @@ hunt, gather or keep the songs. Some things take years; events arrive, some of
 them asking something of you.
 
 The ideas behind it are in [Concepts](concepts.md); how they are built is in
-[Architecture](architecture.md).
+[Architecture](architecture.md); what comes next is in the [Plan](plan.md).
 
 !!! note "Status"
     Playable: a band of a few hundred people, yearly turns, multi-year
     undertakings you can let run, a web of discoveries whose forms the people
     settle on, roles that appear as the people change, and other peoples to
-    meet. Policy and more development come in Milestone 2; detailed NPC
-    relationships and politics in Milestone 3.
+    meet, customs that can be changed, how the people govern themselves, and
+    the families, rivals and marriages around you. What comes next is in the
+    [Plan](plan.md).
 
 ## Running
 
