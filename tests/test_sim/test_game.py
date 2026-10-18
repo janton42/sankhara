@@ -1212,3 +1212,88 @@ def test_kin_by_marriage_would_rather_follow_you(state):
     assert leader is not me and leader.family_name != "Otherkin"
     assert people.feels(state, cousin, me) > people.feels(state, cousin, leader)
     assert cousin in people.faction(state, me, leader)
+
+
+# --- who has a say ----------------------------------------------------------------
+
+
+def _settle_as(state, kind):
+    for camp in state.settlements.values():
+        camp.kind = kind
+
+
+def test_who_has_a_say_changes_as_the_people_settle(state):
+    from sankhara.sim import say
+
+    leader = _not_leading(state)
+    me = state.player
+    assert say.scale(state) == "band" and say.has_say(state, me)
+    _settle_as(state, "village")
+    assert not say.has_say(state, me) and say.has_say(state, leader)
+    elder = next(c for c in state.living() if c.is_elder and c is not leader)
+    assert not say.has_say(state, elder)
+    state.nation.succession = "council"
+    assert say.has_say(state, elder, elder.settlement_id)
+    _settle_as(state, "town")
+    others = [s for s in state.settlements.values() if s.id != state.seat.id]
+    assert say.has_say(state, leader, state.seat.id)
+    if others:
+        assert not say.has_say(state, leader, others[0].id)
+
+
+def test_in_a_village_a_stranger_is_not_yours_to_decide(state):
+    _not_leading(state)
+    _settle_as(state, "village")
+    _quiet(state)
+    stranger = _matter(state, "stranger")
+    assert stranger.answers == ["speak_for_stranger", "speak_against_stranger"]
+    assert not stranger.expected
+    state.plan = [_answer(stranger, "speak_for_stranger"), None, None]
+    game.end_year(state)
+    assert any("the stranger" in line for line in state.log[-30:])
+
+
+def test_in_a_town_families_ask_to_settle_instead(state):
+    _settle_as(state, "town")
+    me = state.player  # leads, at the seat
+    assert events.EVENT_DEFS["stranger"].chance(state, me) == 0
+    assert events.EVENT_DEFS["newcomers"].chance(state, me) > 0
+    _quiet(state)
+    newcomers = events.offer(
+        state, me, events.EVENT_DEFS["newcomers"].build(state, me, state.rng())
+    )
+    state.events.append(newcomers)
+    assert newcomers.expected
+    camp = state.settlement(newcomers.settlement_id)
+    before = camp.population
+    actions.ACTIONS["take_in_family"].effect(actions.Ctx(state, me, state.rng(), newcomers))
+    assert camp.population == before + actions.NEWCOMERS
+
+
+def test_where_keepers_judge_the_leader_does_not(state):
+    from sankhara.sim import say
+
+    state.nation.known["law"] = "keepers_judge"
+    keeper = next((c for c in state.living() if c.station == "keeper"), None)
+    assert not say.judges(state, state.leader)
+    if keeper:
+        assert say.judges(state, keeper)
+    _quiet(state)
+    feud = _matter(state, "feud", data={"a": "X", "b": "Y"})
+    assert "judge_feud" not in feud.answers and "make_peace" in feud.answers
+
+
+def test_a_planter_can_move_the_stones_and_be_found_out(state, monkeypatch):
+    state.player.station = "planter"
+    _quiet(state)
+    built = events.EVENT_DEFS["boundary"].build(state, state.player, state.rng())
+    assert built is not None
+    matter = events.offer(state, state.player, built)
+    assert matter.answers == ["take_to_judgement", "move_further", "let_it_be"]
+    monkeypatch.setattr(actions, "FOUND_OUT", 1.0)
+    family = matter.data["family"]
+    line = actions.ACTIONS["move_further"].effect(
+        actions.Ctx(state, state.player, state.rng(), matter)
+    )
+    assert "found out" in line
+    assert people.grudge(state, family, state.player.family_name)

@@ -17,7 +17,7 @@ a Ctx and return a short sentence for the chronicle.
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-from sankhara.sim import discoveries, tendencies
+from sankhara.sim import discoveries, say, tendencies
 from sankhara.sim.nation import adjust_settlements, advance, clamp, land_richness, people_scale
 from sankhara.sim.people import (
     LEADER_AGE,
@@ -25,6 +25,7 @@ from sankhara.sim.people import (
     create_character,
     faction,
     family_of,
+    grudge_key,
     members,
     standing,
     wed,
@@ -73,6 +74,8 @@ class Action:
 
 
 OWN_SHARE = 0.5
+NEWCOMERS = 5  # people in a family that comes to settle
+FOUND_OUT = 0.35  # chance a wrong done in secret comes out
 HEARD_OUT = 0.15  # how much a rival's followers warm to a leader who comes to hear them
 STOOD_DOWN = 0.25  # how much a rival's followers cool toward one who stands down
 MARRIAGE_STANDING = 10  # standing needed to be heard offering a marriage between families
@@ -631,6 +634,129 @@ def _send_on(ctx):
     return "You gave the stranger directions to the next camp, and nothing else."
 
 
+def _speak_for_stranger(ctx):
+    return "You said the stranger should be taken in, to anyone deciding."
+
+
+def _speak_against_stranger(ctx):
+    return "You said the stranger should be sent on, to anyone deciding."
+
+
+def _take_in_family(ctx):
+    camp = _event_camp(ctx)
+    camp.population += NEWCOMERS
+    _local(ctx, cohesion=-0.5, camp=camp)
+    if ctx.rng.random() < 0.35:
+        _nudge_insight(ctx, ctx.rng.choice(["land", "craft", "lore"]), 15)
+    return f"The newcomers built their shelters at the edge of {camp.name}."
+
+
+def _turn_away_family(ctx):
+    who = ctx.event.data.get("people") if ctx.event else None
+    for n in ctx.state.neighbours.values():
+        if n.name == who:
+            n.relations = max(-1.0, n.relations - 0.05)
+    return "You told the newcomers there was no room for them."
+
+
+# --- answers: what is yours, and what is theirs -----------------------------------
+
+
+def _family_of_matter(ctx):
+    return ctx.event.data.get("family", "") if ctx.event else ""
+
+
+def _found_out(ctx, chance, what):
+    """A wrong done in secret may come out. Returns a line to add, or ''."""
+    if ctx.rng.random() >= chance:
+        return ""
+    family = _family_of_matter(ctx)
+    for c in members(ctx.state, family):
+        c.adjust_affinity(ctx.char.id, -0.4)
+    ctx.char.means.set("regard", ctx.char.means.get("regard") * 0.85)
+    if family and family != ctx.char.family_name:
+        ctx.state.nation.grudges[grudge_key(family, ctx.char.family_name)] = ctx.state.year
+    return f" The {family} family found out about {what}, and will not forget it."
+
+
+def _warm_family(ctx, amount):
+    for c in members(ctx.state, _family_of_matter(ctx)):
+        c.adjust_affinity(ctx.char.id, amount)
+
+
+def _share_grove(ctx):
+    _warm_family(ctx, 0.15)
+    _gain(ctx, "food", 4 * _own_land(ctx))
+    return f"You gathered beside the {_family_of_matter(ctx)} family, and there was enough."
+
+
+def _gather_anyway(ctx):
+    _gain(ctx, "food", 10 * _own_land(ctx))
+    return "You went to the grove before dawn and filled your baskets." + _found_out(
+        ctx, FOUND_OUT, "the grove"
+    )
+
+
+def _leave_grove(ctx):
+    return "You left the grove to them and looked elsewhere."
+
+
+def _watch_traps(ctx):
+    who = _target(ctx)
+    _gain(ctx, "regard", 1)
+    if who and ctx.rng.random() < 0.6:
+        who.adjust_affinity(ctx.char.id, -0.2)
+        return f"You lay in the reeds and caught {who.name} at your traps. Everyone heard of it."
+    return "You watched your traps for nights on end, and no one came."
+
+
+def _set_more(ctx):
+    _gain(ctx, "food", 4 * _own_land(ctx))
+    return "You set more traps and let the thief have the few."
+
+
+def _empty_theirs(ctx):
+    _gain(ctx, "food", 8 * _own_land(ctx))
+    return "You emptied their traps in return." + _found_out(ctx, FOUND_OUT, "their traps")
+
+
+def _take_to_judgement(ctx):
+    _gain(ctx, "regard", 1)
+    if ctx.rng.random() < 0.6:
+        _gain(ctx, "food", 4)
+        return "Those who judge such things set the stones back where they had been."
+    _warm_family(ctx, -0.1)
+    return "Those who judge such things could not say where the stones had stood."
+
+
+def _move_further(ctx):
+    _gain(ctx, "food", 6 * _own_land(ctx))
+    return "You moved the stones back, and a little further." + _found_out(
+        ctx, FOUND_OUT, "the stones"
+    )
+
+
+def _let_it_be(ctx):
+    _local(ctx, cohesion=0.5)
+    return "You let the stones lie where they were. There is land enough."
+
+
+def _return_stray(ctx):
+    _warm_family(ctx, 0.2)
+    return f"You drove the beast back to the {_family_of_matter(ctx)} family's herd."
+
+
+def _keep_stray(ctx):
+    _gain(ctx, "food", 12)
+    return "The beast is yours now, if anyone asks." + _found_out(ctx, FOUND_OUT, "the beast")
+
+
+def _ask_reward(ctx):
+    _gain(ctx, "food", 4)
+    _warm_family(ctx, -0.05)
+    return "You gave the beast back, for a share of its milk."
+
+
 def _sit_with_dying(ctx):
     _gain(ctx, "regard", 1)
     target = ctx.state.character(ctx.event.target_id) if ctx.event else None
@@ -846,6 +972,22 @@ def _has_leader(state, char):
 
 def _could_bring_gifts(state, char):
     return char.means.get("regard") >= MARRIAGE_STANDING
+
+
+def _has_say(state, char):
+    return say.has_say(state, char)
+
+
+def _no_say(state, char):
+    return not say.has_say(state, char)
+
+
+def _judges(state, char):
+    return say.judges(state, char)
+
+
+def _not_judging(state, char):
+    return not say.judges(state, char)
 
 
 def _not_leading(state, char):
@@ -1196,11 +1338,12 @@ ACTION_LIST = [
         "judge_feud",
         "Judge between them",
         "Hear both families and decide what is owed.",
-        ("leader",),
+        (),
         ("contemplative", "caring"),
         0.04,
         _judge_feud,
         {"regard": 3},
+        requires=_judges,
     ),
     Action(
         "make_peace",
@@ -1211,7 +1354,7 @@ ACTION_LIST = [
         0.04,
         _make_peace,
         {"regard": 2},
-        requires=_not_leading,
+        requires=_not_judging,
     ),
     Action(
         "side_with",
@@ -1397,6 +1540,7 @@ ACTION_LIST = [
         0.04,
         _welcome_stranger,
         {"food": 4},
+        requires=_has_say,
     ),
     Action(
         "send_on",
@@ -1406,6 +1550,161 @@ ACTION_LIST = [
         ("acquisitive",),
         -0.02,
         _send_on,
+        requires=_has_say,
+    ),
+    Action(
+        "speak_for_stranger",
+        "Say they should be taken in",
+        "It is not yours to decide, but you can be heard.",
+        (),
+        ("generous",),
+        0.02,
+        _speak_for_stranger,
+        requires=_no_say,
+    ),
+    Action(
+        "speak_against_stranger",
+        "Say they should be sent on",
+        "It is not yours to decide, but you can be heard.",
+        (),
+        ("acquisitive",),
+        -0.01,
+        _speak_against_stranger,
+        requires=_no_say,
+    ),
+    Action(
+        "take_in_family",
+        "Let them settle",
+        "More hands, more mouths.",
+        (),
+        ("generous",),
+        0.03,
+        _take_in_family,
+        {"regard": 1},
+        requires=_has_say,
+    ),
+    Action(
+        "turn_away_family",
+        "Turn them away",
+        "There is no room, or no wish to make it.",
+        (),
+        ("harsh",),
+        -0.02,
+        _turn_away_family,
+        requires=_has_say,
+    ),
+    # what is yours, and what is theirs
+    Action(
+        "share_grove",
+        "Gather there beside them",
+        "There is enough for two families, if both take care.",
+        ("gatherer",),
+        ("generous",),
+        0.03,
+        _share_grove,
+    ),
+    Action(
+        "gather_anyway",
+        "Go there before dawn",
+        "No one owns what grows wild. Or so you will say if anyone asks.",
+        ("gatherer",),
+        ("acquisitive",),
+        -0.03,
+        _gather_anyway,
+    ),
+    Action(
+        "leave_grove",
+        "Leave it to them",
+        "Look for food elsewhere.",
+        ("gatherer",),
+        ("contemplative",),
+        0.01,
+        _leave_grove,
+    ),
+    Action(
+        "watch_traps",
+        "Lie in wait by your traps",
+        "Catch whoever it is, and let everyone know.",
+        ("fisher",),
+        ("harsh",),
+        -0.01,
+        _watch_traps,
+        {"hands": 1},
+    ),
+    Action(
+        "set_more",
+        "Set more traps",
+        "Let the thief have a few; there are fish enough.",
+        ("fisher",),
+        ("generous", "diligent"),
+        0.02,
+        _set_more,
+        {"hands": 1},
+    ),
+    Action(
+        "empty_theirs",
+        "Empty their traps in return",
+        "Take back what was taken, and a little more.",
+        ("fisher",),
+        ("acquisitive", "harsh"),
+        -0.04,
+        _empty_theirs,
+    ),
+    Action(
+        "take_to_judgement",
+        "Take it to those who judge",
+        "Let someone else say where the stones stood.",
+        ("planter",),
+        ("contemplative",),
+        0.02,
+        _take_to_judgement,
+        {"regard": 1},
+    ),
+    Action(
+        "move_further",
+        "Move the stones back, and further",
+        "They started it.",
+        ("planter",),
+        ("acquisitive", "harsh"),
+        -0.04,
+        _move_further,
+        {"hands": 1},
+    ),
+    Action(
+        "let_it_be",
+        "Let the stones lie",
+        "A field's edge is not worth a feud.",
+        ("planter",),
+        ("generous", "contemplative"),
+        0.03,
+        _let_it_be,
+    ),
+    Action(
+        "return_stray",
+        "Drive it back to them",
+        "It is theirs.",
+        ("herder",),
+        ("generous",),
+        0.03,
+        _return_stray,
+    ),
+    Action(
+        "keep_stray",
+        "Keep it among yours",
+        "Who could tell one beast from another?",
+        ("herder",),
+        ("acquisitive",),
+        -0.04,
+        _keep_stray,
+    ),
+    Action(
+        "ask_reward",
+        "Give it back, for a share",
+        "You fed it, after all.",
+        ("herder",),
+        ("acquisitive",),
+        0.0,
+        _ask_reward,
     ),
     Action(
         "sit_with_dying",
