@@ -26,6 +26,7 @@ from sankhara.sim.people import (
     leader_failing,
     members,
     standing,
+    support,
 )
 from sankhara.sim.peoples import raid_chance
 from sankhara.sim.state import EventInstance
@@ -215,6 +216,7 @@ def _feud_resolve(state, event, taken, rng):
 
 OLD_GRUDGE_FLARES = 0.7  # a feud that flares between families with an old grudge
 RIVAL_SHARE = 0.6  # standing, relative to the leader's, at which someone is a rival to them
+DIVIDED_COHESION = 0.5  # a year's fraying while the people are divided
 FOLLOWERS_DRAWN = 0.05  # how much a rival's unanswered talk warms their camp toward them
 RIVAL_REGARD = 15
 
@@ -237,6 +239,29 @@ def rival(state):
         return None
     best = max(others, key=standing)
     return best if standing(best) >= RIVAL_SHARE * standing(leader) else None
+
+
+def divided_year(state):
+    """When more of the people's weight stands behind a rival than behind the leader, the
+    camps divide: the rival's camp frays each year until one side gives way. Returns a
+    line when the people divide or come back together."""
+    nation = state.nation
+    leader = state.leader
+    r = rival(state)
+    split = (
+        r is not None
+        and leader is not None
+        and support(state, r, leader) > max(0.0, support(state, leader, r))
+    )
+    if split:
+        adjust_settlements(state, cohesion=-DIVIDED_COHESION)
+        adjust_settlements(state, cohesion=-DIVIDED_COHESION, only=r.settlement_id)
+    if split == bool(nation.divided):
+        return ""
+    nation.divided = r.id if split else 0
+    if split:
+        return f"The people are divided between {leader.full_name} and {r.full_name}."
+    return "The people are of one mind again about who leads them."
 
 
 def _npc_rival(state, char):

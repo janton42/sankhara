@@ -14,7 +14,14 @@ from sankhara.core.game_engine import new_seed
 from sankhara.entities.namer import make_family_name
 from sankhara.sim import discoveries, projects, tendencies
 from sankhara.sim.actions import ACTIONS, Ctx, budget_for, cares_for, effective_cost
-from sankhara.sim.events import answer_key, generate_events, resolve_events, unmet
+from sankhara.sim.events import (
+    answer_key,
+    divided_year,
+    generate_events,
+    resolve_events,
+    rival,
+    unmet,
+)
 from sankhara.sim.nation import (
     capacity,
     economy_year,
@@ -30,8 +37,10 @@ from sankhara.sim.people import (
     create_spouse,
     die,
     ensure_elders,
+    faction,
     family_of,
     feels,
+    grudge,
     grudges_of,
     leadership_year,
     make_leader,
@@ -609,6 +618,11 @@ def _world_year(state, protect, lines, interrupts):
     for note in (succeed(state), leadership_year(state)):
         if note:
             lines.append(note)
+    divided = divided_year(state)
+    if divided:
+        lines.append(divided)
+        if not protect:
+            interrupts.append(divided)
     _orphaned_works(state, lines)
     if not protect:
         interrupts += projects.player_notes(state)
@@ -863,6 +877,22 @@ def around_you(state):
     near.sort(key=lambda c: (-abs(feels(state, c, player)), -c.means.get("regard")))
     out += near[: AROUND_YOU - len(out)]
     return [(c, feels(state, c, player)) for c in out]
+
+
+def ties(state, char):
+    """What else stands between the player and someone around them, in words: an old
+    grudge between their families, or which side they take while a rival vies to lead."""
+    player = state.player
+    out = []
+    if grudge(state, char.family_name, player.family_name):
+        out.append(f"the {char.family_name} and your family are at odds")
+    r, leader = rival(state), state.leader
+    if r is not None and leader is not None and char is not r and char is not leader:
+        if char in faction(state, r, leader):
+            out.append(f"would follow {r.name}")
+        elif char in faction(state, leader, r):
+            out.append(f"stands by {leader.name}")
+    return out
 
 
 def threads(state):

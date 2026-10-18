@@ -957,3 +957,62 @@ def test_a_feud_leaves_a_grudge_that_can_flare_again(state):
         if not people.grudge(state, a, b):
             break
     assert not people.grudge(state, a, b)
+
+
+# --- factions ---------------------------------------------------------------------
+
+
+def _a_rival_with_followers(state):
+    """A leader, a rival as respected, and everyone else warmer to the rival."""
+    leader = _living_leader(state)
+    r = _other_adult(state, leader)
+    leader.means.set("regard", 100)
+    r.means.set("regard", 95)
+    for c in state.living():
+        if c.age(state.year) >= ADULT_AGE and c not in (r, leader):
+            c.means.set("regard", 20)
+            c.adjust_affinity(r.id, 0.6)
+    assert events.rival(state) is r
+    return leader, r
+
+
+def test_a_people_divided_over_who_leads_frays_until_it_mends(state):
+    leader, r = _a_rival_with_followers(state)
+    before = state.nation.cohesion
+    line = events.divided_year(state)
+    assert line == f"The people are divided between {leader.full_name} and {r.full_name}."
+    assert state.nation.divided == r.id and state.nation.cohesion < before
+    assert events.divided_year(state) == ""  # said once, felt every year
+    for c in state.living():
+        c.affinity.pop(str(r.id), None)
+    assert events.divided_year(state).startswith("The people are of one mind again")
+    assert not state.nation.divided
+
+
+def test_those_who_stood_by_an_unseated_leader_resent_the_one_who_unseated_them(state):
+    leader, r = _a_rival_with_followers(state)
+    loyal = next(c for c in state.living() if c not in (leader, r) and c.age(state.year) >= 20)
+    loyal.affinity[str(r.id)] = -0.5
+    loyal.adjust_affinity(leader.id, 0.8)
+    rng = state.rng()
+    while not people.bid_to_lead(state, r, rng):
+        r.means.set("regard", 95)
+    assert state.nation.leader_id == r.id
+    assert loyal.feels(r.id) == pytest.approx(-0.5 - people.LOYAL_RESENTMENT)
+
+
+def test_you_see_who_would_follow_whom_and_old_grudges(state):
+    leader, r = _a_rival_with_followers(state)
+    if state.player in (leader, r):
+        state.player.is_player = False
+        me = _other_adult(state, leader, r)
+        me.is_player = True
+        state.player_id = me.id
+    me = state.player
+    follower = next(
+        c for c in state.living() if c not in (leader, r, me) and c.age(state.year) >= 20
+    )
+    assert f"would follow {r.name}" in game.ties(state, follower)
+    if follower.family_name != me.family_name:
+        state.nation.grudges[people.grudge_key(follower.family_name, me.family_name)] = state.year
+        assert any("at odds" in t for t in game.ties(state, follower))

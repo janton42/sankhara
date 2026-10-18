@@ -322,6 +322,7 @@ def standing(char):
 
 FOLLOWER_WEIGHT = 0.25  # how much those who would follow someone add to their standing
 BID_LOST_REGARD = 0.8  # what is left of one's standing after the people did not follow
+LOYAL_RESENTMENT = 0.15  # how much the old leader's followers cool toward one who unseated them
 
 
 def leader_failing(state):
@@ -331,15 +332,21 @@ def leader_failing(state):
     )
 
 
+def faction(state, char, against):
+    """The grown people who would follow `char` rather than `against`."""
+    return [
+        c
+        for c in state.living()
+        if c is not char
+        and c is not against
+        and c.age(state.year) >= ADULT_AGE
+        and feels(state, c, char) > feels(state, c, against) + 0.1
+    ]
+
+
 def support(state, char, against):
     """The standing of the grown people who would follow `char` rather than `against`."""
-    total = 0.0
-    for c in state.living():
-        if c is char or c is against or c.age(state.year) < ADULT_AGE:
-            continue
-        if feels(state, c, char) > feels(state, c, against) + 0.1:
-            total += standing(c)
-    return total
+    return sum(standing(c) for c in faction(state, char, against))
 
 
 def bid_chance(state, char):
@@ -362,6 +369,10 @@ def bid_to_lead(state, char, rng):
     asker's standing suffers and the leader thinks less of them."""
     leader = state.leader
     if rng.random() < bid_chance(state, char):
+        if leader:
+            # those who stood by the old leader do not forget who pushed them aside
+            for c in faction(state, leader, char):
+                c.adjust_affinity(char.id, -LOYAL_RESENTMENT)
         make_leader(state, char)
         return True
     char.means.set("regard", char.means.get("regard") * BID_LOST_REGARD)
