@@ -1160,3 +1160,55 @@ def test_people_wed_within_the_known_families(play):
     s = game.new_game(seed=5)
     play(s, 150, seed=5)
     assert s.nation.alliances
+
+
+# --- kin by marriage ----------------------------------------------------------------
+
+
+def _with_in_laws(state):
+    me, other = _unwed_pair(state)
+    cousin = people.create_character(
+        state, "hunter", me.settlement_id, state.year - 30, family_name="Otherkin"
+    )
+    people.wed(state, me, other)
+    assert [f for f, _ in people.in_laws(state, me)] == ["Otherkin"]
+    return me, cousin
+
+
+def test_kin_by_marriage_ask_for_help_and_remember_the_answer(state):
+    me, cousin = _with_in_laws(state)
+    _quiet(state)
+    ask = events.offer(state, me, events.EVENT_DEFS["kin_asks"].build(state, me, state.rng()))
+    state.events.append(ask)
+    assert ask.expected and ask.answers == ["share_with_kin", "refuse_kin"]
+    me.means.add({"food": 20})
+    before = cousin.feels(me.id)
+    state.plan = [_answer(ask, "share_with_kin"), None, None]
+    game.end_year(state)
+    assert cousin.feels(me.id) > before
+    _quiet(state)
+    ask = _matter(state, "kin_asks", data={"family": "Otherkin"})
+    before = cousin.feels(me.id)
+    game.end_year(state)  # ignored
+    assert cousin.feels(me.id) < before
+
+
+def test_kin_who_think_well_of_you_send_food_to_a_bare_hearth(state):
+    me, cousin = _with_in_laws(state)
+    me.means.set("food", 0)
+    cousin.adjust_affinity(me.id, 0.5)
+    news = events.EVENT_DEFS["kin_help"].build(state, me, state.rng())
+    assert news is not None and "Otherkin" in news.text
+    assert me.means.get("food") == events.KIN_GIFT
+    me.means.set("food", 50)
+    for camp in state.settlements.values():
+        camp.food_balance = 0
+    assert events.EVENT_DEFS["kin_help"].chance(state, me) == 0  # no longer bare
+
+
+def test_kin_by_marriage_would_rather_follow_you(state):
+    leader = _not_leading(state)
+    me, cousin = _with_in_laws(state)
+    assert leader is not me and leader.family_name != "Otherkin"
+    assert people.feels(state, cousin, me) > people.feels(state, cousin, leader)
+    assert cousin in people.faction(state, me, leader)
