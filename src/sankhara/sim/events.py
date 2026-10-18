@@ -218,6 +218,18 @@ def _feud_resolve(state, event, taken, rng):
     taken_with = set(event.data.get("taken_with", []))
     if "join_families" in taken_with:
         return _joined(state, a, b, rng)
+    if "set_blood_price" in taken_with and rng.random() < 0.9:
+        state.nation.grudges.pop(grudge_key(a, b), None)
+        return f"The {b} family paid what was set, and the {a} family took it."
+    if "ordeal" in taken_with:
+        loser = rng.choice((a, b))
+        for c in members(state, loser):
+            c.adjust_affinity(state.player_id, -0.2)
+        if rng.random() < 0.7:
+            state.nation.grudges.pop(grudge_key(a, b), None)
+            return f"The ordeal went against the {loser} family. They bowed to it, mostly."
+        state.nation.grudges[grudge_key(a, b)] = state.year
+        return f"The ordeal went against the {loser} family, and they would not accept it."
     peacemaking = {"judge_feud", "make_peace"} & taken_with
     if peacemaking and rng.random() < 0.8:
         state.nation.grudges.pop(grudge_key(a, b), None)
@@ -729,6 +741,37 @@ def _blood_owed_resolve(state, event, taken, rng):
     return f"Men of the {family} family came for you in the night."
 
 
+def _outshone(state, char, rng):
+    """Someone of another family is rising past you, and they are no friend of yours."""
+    near = [
+        c
+        for c in _others_near(state, char)
+        if c.means.get("regard") > char.means.get("regard") and feels(state, c, char) < 0.2
+    ]
+    if not near:
+        return None
+    who = max(near, key=lambda c: c.means.get("regard"))
+    return EventInstance(
+        "outshone",
+        f"People look more and more to {who.full_name}, and less to you.",
+        target_id=who.id,
+        data={"family": who.family_name},
+    )
+
+
+def _trade_offer(state, char, rng):
+    near = _others_near(state, char)
+    if not near:
+        return None
+    who = rng.choice(near)
+    return EventInstance(
+        "trade_offer",
+        f"{who.full_name} wants to trade with you, and has never been good at counting.",
+        target_id=who.id,
+        data={"family": who.family_name},
+    )
+
+
 def _claim(kind, text):
     """A role matter about what is whose, with a known family of the player's camp."""
 
@@ -900,7 +943,7 @@ EVENTS = [
         "hunger",
         lambda s, c: 0.9 if _hungry(s) else 0.0,
         _hunger,
-        answers=("open_stores", "share_food", "bring_food", "keep_close"),
+        answers=("open_stores", "share_food", "bring_food", "keep_close", "keep_seed"),
         expects=("open_stores", "share_food"),
         penalty=0.1,
     ),
@@ -936,7 +979,7 @@ EVENTS = [
         "match",
         lambda s, c: MATCH_CHANCE if _match_open(s, c) else 0.0,
         _match_build,
-        answers=("accept_match", "refuse_match"),
+        answers=("accept_match", "bride_price", "refuse_match"),
     ),
     EventDef(
         "kin_asks",
@@ -993,8 +1036,15 @@ EVENTS = [
         lambda s, c: 0.04 + (0.08 if s.nation.cohesion < 45 else 0.0),
         _feud,
         _feud_resolve,
-        answers=("judge_feud", "make_peace", "join_families", "side_with"),
-        expects=("judge_feud",),
+        answers=(
+            "judge_feud",
+            "set_blood_price",
+            "ordeal",
+            "make_peace",
+            "join_families",
+            "side_with",
+        ),
+        expects=("judge_feud", "set_blood_price", "ordeal"),
         penalty=0.06,
     ),
     EventDef(
@@ -1002,7 +1052,7 @@ EVENTS = [
         lambda s, c: max((raid_chance(s, n) for n in s.neighbours.values()), default=0.0),
         _raid,
         _raid_resolve,
-        answers=("answer_raid", "stand_guard", "avenge_raid", "help_camp"),
+        answers=("answer_raid", "stand_guard", "avenge_raid", "take_captives", "help_camp"),
         expects=("answer_raid", "stand_guard"),
         penalty=0.06,
     ),
@@ -1022,6 +1072,18 @@ EVENTS = [
         penalty=0.05,
     ),
     # near you
+    EventDef(
+        "outshone",
+        lambda s, c: 0.05,
+        _outshone,
+        answers=("spread_tale", "praise_them", "say_nothing"),
+    ),
+    EventDef(
+        "trade_offer",
+        lambda s, c: 0.06 if "exchange" in s.nation.known and c.station != "trader" else 0.0,
+        _trade_offer,
+        answers=("short_measure", "fair_trade"),
+    ),
     EventDef(
         "unguarded",
         lambda s, c: 0.05,

@@ -29,6 +29,8 @@ GROWTH = 0.02
 TOWN_SIZE = 600  # a village this big becomes a town, once the people know what that is
 KINDS = ("camp", "village", "town")
 
+SEED_KEPT_HARVEST = 1.2  # a harvest after seed was kept back for planting
+
 
 def clamp(x, lo=0.0, hi=100.0):
     return max(lo, min(hi, x))
@@ -219,6 +221,8 @@ def households_year(state):
         station = STATIONS[char.station]
         settlement = state.settlement(char.settlement_id) or state.seat
         season = state.modifiers.get("harvest", 1.0)
+        if state.nation.seed_kept == state.year - 1:
+            season *= SEED_KEPT_HARVEST
         income = {c: v for c, v in station.income.items() if c in in_use}
         income["food"] = (
             income.get("food", 0)

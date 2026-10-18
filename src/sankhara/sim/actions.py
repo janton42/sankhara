@@ -75,6 +75,9 @@ class Action:
 
 
 OWN_SHARE = 0.5
+TALE_COST = 0.8  # what is left of someone's standing after tales are spread about them
+BRIDE_PRICE = 10
+CAPTIVES = 3
 STOLEN = 15  # food taken from another family's unguarded stores
 FIGHT_STARTS_FEUD = 0.25
 AFFAIR_FOUND_OUT = 0.3
@@ -689,6 +692,90 @@ def _found_out(ctx, chance, what, family=None, cool=0.4, kept=0.85):
 # --- answers: temptations ------------------------------------------------------------
 
 
+def _spread_tale(ctx):
+    who = _target(ctx)
+    if who is None:
+        return "There was no one to speak against."
+    who.means.set("regard", who.means.get("regard") * TALE_COST)
+    return f"You let it be known, quietly, what {who.name} is really like." + _found_out(
+        ctx, 0.35, "your tales", kept=0.8
+    )
+
+
+def _praise_them(ctx):
+    who = _target(ctx)
+    if who:
+        who.adjust_affinity(ctx.char.id, 0.2)
+        who.means.add({"regard": 1})
+    return "You spoke well of them, and meant most of it."
+
+
+def _say_nothing(ctx):
+    return "You kept your thoughts to yourself."
+
+
+def _short_measure(ctx):
+    _gain(ctx, "food", 10)
+    return "You gave less than you took, and they never counted." + _found_out(
+        ctx, 0.35, "the short measure"
+    )
+
+
+def _fair_trade(ctx):
+    _gain(ctx, "food", 4)
+    _warm_family(ctx, 0.1)
+    return "You traded fairly, and both went home content."
+
+
+def _bride_price(ctx):
+    match = _match_of(ctx)
+    if match is None or ctx.char.spouse_id is not None:
+        return "The match came to nothing."
+    family = match.family_name
+    if ctx.char.gender == "female":
+        _gain(ctx, "food", BRIDE_PRICE)
+        line = f"The {family} family paid what was asked for you, and you went to {match.name}."
+    else:
+        paid = min(BRIDE_PRICE, ctx.char.means.get("food"))
+        _gain(ctx, "food", -paid)
+        for c in members(ctx.state, family):
+            c.adjust_affinity(ctx.char.id, 0.15)
+        line = f"You paid the {family} family for {match.name}, as is done."
+    wed(ctx.state, ctx.char, match)
+    return line
+
+
+def _take_captives(ctx):
+    n = ctx.state.neighbour(ctx.event.data.get("neighbour")) if ctx.event else None
+    if n is None:
+        return "There was no one to take."
+    n.relations = max(-1.0, n.relations - 0.3)
+    camp = ctx.settlement
+    camp.population += CAPTIVES
+    ctx.state.nation.stores.add({"food": 4 * CAPTIVES})
+    _gain(ctx, "regard", 2)
+    return f"You came back from the {n.name} with captives, to work in {camp.name} as yours."
+
+
+def _set_blood_price(ctx):
+    _gain(ctx, "regard", 1)
+    return "You set what the wrong was worth, to be paid in food and goods."
+
+
+def _ordeal(ctx):
+    _gain(ctx, "regard", 1)
+    return "You put them to the ordeal, and let the unseen show who was in the right."
+
+
+def _keep_seed(ctx):
+    ctx.state.nation.seed_kept = ctx.state.year
+    _local(ctx, cohesion=-1.5)
+    for c in ctx.state.living():
+        if c.settlement_id == ctx.char.settlement_id and c.health < 50:
+            heal(c, -3)
+    return "You kept the seed back for planting, and the hungry went on being hungry."
+
+
 def _steal_stores(ctx):
     _gain(ctx, "food", STOLEN)
     return "You filled a basket from their stores and carried it home in the dark." + _found_out(
@@ -1119,6 +1206,22 @@ def _has_leader(state, char):
 
 def _could_bring_gifts(state, char):
     return char.means.get("regard") >= MARRIAGE_STANDING
+
+
+def _knows(did):
+    return lambda state, char: did in state.nation.known
+
+
+def _fights(state, char):
+    return state.nation.known.get("warriors") in ("war_band", "all_fight")
+
+
+def _plants(state, char):
+    return "cultivation" in state.nation.known and char.station in ("leader", "planter")
+
+
+def _judges_with_spirits(state, char):
+    return say.judges(state, char) and "spirits" in state.nation.known
 
 
 def _has_say(state, char):
@@ -1852,6 +1955,103 @@ ACTION_LIST = [
         ("acquisitive",),
         0.0,
         _ask_reward,
+    ),
+    # lies, trade, and the people's own ways
+    Action(
+        "spread_tale",
+        "Spread a tale about them",
+        "Not quite a lie. Not quite true.",
+        (),
+        ("ambitious", "harsh"),
+        -0.05,
+        _spread_tale,
+    ),
+    Action(
+        "praise_them",
+        "Speak well of them",
+        "Their standing is no loss to yours.",
+        (),
+        ("generous",),
+        0.03,
+        _praise_them,
+    ),
+    Action(
+        "say_nothing",
+        "Say nothing",
+        "Let others talk.",
+        (),
+        ("contemplative",),
+        0.0,
+        _say_nothing,
+    ),
+    Action(
+        "short_measure",
+        "Give short measure",
+        "They will not count it.",
+        (),
+        ("acquisitive",),
+        -0.04,
+        _short_measure,
+    ),
+    Action(
+        "fair_trade",
+        "Trade fairly",
+        "What you would want for yourself.",
+        (),
+        ("generous",),
+        0.02,
+        _fair_trade,
+    ),
+    Action(
+        "bride_price",
+        "Wed, for a bride-price",
+        "Goods from the groom's kin to the bride's, as is done.",
+        (),
+        ("acquisitive",),
+        0.0,
+        _bride_price,
+    ),
+    Action(
+        "take_captives",
+        "Take captives in return",
+        "Hands to work, for what they took.",
+        ("leader", "warrior"),
+        ("harsh", "acquisitive"),
+        -0.02,
+        _take_captives,
+        requires=_fights,
+    ),
+    Action(
+        "set_blood_price",
+        "Set a price for the wrong",
+        "Food and goods instead of blood, paid by the family in the wrong.",
+        (),
+        ("contemplative",),
+        0.01,
+        _set_blood_price,
+        {"regard": 2},
+        requires=_judges,
+    ),
+    Action(
+        "ordeal",
+        "Put them to the ordeal",
+        "Fire or water: the unseen will show who is in the right.",
+        (),
+        ("contemplative",),
+        0.0,
+        _ordeal,
+        {"regard": 1},
+        requires=_judges_with_spirits,
+    ),
+    Action(
+        "keep_seed",
+        "Keep the seed back",
+        "If it is eaten now, there will be nothing to plant.",
+        (),
+        ("diligent", "harsh"),
+        0.0,
+        _keep_seed,
+        requires=_plants,
     ),
     # temptations
     Action(

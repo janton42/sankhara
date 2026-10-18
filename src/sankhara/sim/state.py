@@ -126,6 +126,7 @@ class Nation:
     grudges: dict[str, int] = field(default_factory=dict)  # "A|B" -> year the families fell out
     alliances: dict[str, int] = field(default_factory=dict)  # "A|B" -> year joined by marriage
     blood_owed: dict[str, list] = field(default_factory=dict)  # family -> [killer id, victim]
+    seed_kept: int = 0  # the last year seed was kept back from the hungry for planting
     divided: int = 0  # the rival the people are divided over, if any
 
 
