@@ -304,6 +304,8 @@ def die(state, char, cause):
 
 def age_and_health(state, char, rng):
     """Yearly drift in health. Returns a cause of death, or '' if they live on."""
+    if char.doom:
+        return char.doom
     age = char.age(state.year)
     if age > 30:
         char.health -= 0.6 + max(0, age - 50) * 0.15
