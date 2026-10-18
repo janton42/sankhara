@@ -14,6 +14,14 @@ nothing says there is no winning. Design: `docs/concepts.md` (check it for new
 notes every session). Next: M2 = policy and more development; M3 = detailed NPCs
 and politics.
 
+## Branches
+
+- Only `main` and `develop` live long (`gh-pages` is the docs site, built by CI).
+- New work: a branch from `develop` in its own worktree
+  (`git worktree add ../sankhara-wt/<name> -b <name> develop`), a PR with
+  `--base develop`, merged back into `develop`, then the branch and worktree removed.
+- `develop` goes to `main` when the user decides.
+
 ## Commands
 
 - `uv run sankhara` — run the game (entry point `sankhara.app:main`)
