@@ -647,8 +647,12 @@ game starts with a small band rather than a kingdom; this is how that is built:<
 <td><code>people.next_leader()</code> chooses among the most respected (<code>standing</code>: regard, plus a little for elders), weighted toward the top, with no favour for the old leader's kin. While a leader lives, <code>leadership_year()</code> lets them give way when old or frail, or lets the people turn to someone who far outshines them. Anyone respected enough can also ask the people to follow them (the <code>stand_forward</code> deed); it may fail and cost standing. Later the form of "how the people decide" can change this: a council of elders, the strongest, or a lineage (the only form that ties leading to a family). Titles follow (<code>nation.names</code>).</td>
 </tr>
 <tr>
+<td>Government: how the people decide, and what they owe</td>
+<td>The form of "how the people decide" also settles <em>who settles customs</em> (<code>game._decides</code>, <code>_voice</code>, <code>discoveries.deciders</code>): with no custom, the leader decides matters of kin and custom; under a <strong>council of elders</strong> nobody decides alone, the elders' own leanings settle it and an elder's or the leader's word carries <code>COUNCIL_VOICE</code> times further; where <strong>the strongest leads</strong>, the chief settles every custom and other voices carry half. "What is owed to the leader" (<code>tribute</code>) feeds the leader's family (<code>leader_food</code>, scaled with the people) as well as the common stores.</td>
+</tr>
+<tr>
 <td>Other peoples; violence real but not the focus</td>
-<td><code>peoples.py</code>: three other peoples, simulated coarsely. They grow, learn, meet you, share ideas, intermarry, and drift toward or away from you. Raids come as matters at hand: the leader is expected to seek redress; avenging is a harsh other answer, and anyone can help the struck camp rebuild. No armies.</td>
+<td><code>peoples.py</code>: three other peoples, simulated coarsely. They grow, learn, meet you, share ideas, intermarry, and drift toward or away from you. Raids come as matters at hand: the leader is expected to seek redress; avenging is a harsh other answer, and anyone can help the struck camp rebuild. No armies: only once the people settle "those who fight" as a band of young men does a <strong>warrior</strong> role exist (<code>stations</code>: one who fights), with its own cares (keeping watch, which turns raids back for a year via <code>nation.watched_until</code>; training the young), answers (standing guard over a struck camp) and matters (a champion's challenge from another people).</td>
 </tr>
 <tr>
 <td>Karma only on the action layer</td>
