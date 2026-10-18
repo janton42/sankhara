@@ -228,6 +228,8 @@ def households_year(state):
         )
         if station.leads:
             income["regard"] = income.get("regard", 0) + fx.get("leader_regard", 0)
+            # what the people give the one who leads them, if that is their custom
+            income["food"] += fx.get("leader_food", 0) * people_scale(state)
         char.means.add(income, char.fortune)
         char.means.add({"food": ADULT_FOOD + DEPENDANT_FOOD * dependants(state, char)}, -1)
         spoil = max(MIN_SPOILAGE, FAMILY_SPOILAGE + fx.get("spoilage", 0))

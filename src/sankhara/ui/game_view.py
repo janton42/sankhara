@@ -206,10 +206,11 @@ class FormChoicePopup(Popup):
         self.on_chosen = on_chosen
         d = discoveries.DISCOVERIES[state.pending_choice]
         deciding = state.pending_mode == "decide"
+        who = discoveries.deciders_word(state).capitalize()
         question = (
             "How should it be among our people?"
             if deciding
-            else "The people are deciding how it should be. What will you speak for?"
+            else f"{who} are deciding how it should be. What will you speak for?"
         )
         old = d.form(state.nation.known.get(d.id, ""))
         if old is not None:

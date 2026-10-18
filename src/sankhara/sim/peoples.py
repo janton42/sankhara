@@ -14,6 +14,7 @@ LEARN_CHANCE = 0.03  # a neighbour coming to know something new, per year
 SHARE_CHANCE = 0.05  # an idea passing between met peoples, per year at neutral relations
 SHARE_AMOUNT = 0.3  # share of a discovery's cost an idea brings
 CONTACT_CHANCE = 0.02
+WATCHED = 0.5  # how much likelier raids are to be turned back while someone keeps watch
 NEAR_CONTACT = 0.12  # extra chance a year when ranges come within reach of each other
 
 
@@ -144,4 +145,6 @@ def raid_chance(state, n):
     if not n.met or n.relations > -0.1:
         return 0.0
     guarded = 1 - min(0.8, discoveries.fx(state, "defence"))
+    if state.nation.watched_until >= state.year:
+        guarded *= WATCHED
     return min(0.35, 0.2 * -n.relations * (0.5 + n.temper)) * guarded

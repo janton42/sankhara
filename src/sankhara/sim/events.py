@@ -163,6 +163,10 @@ def _feud_resolve(state, event, taken, rng):
     return f"The {event.data['a']} and {event.data['b']} families no longer speak."
 
 
+def _knows_fighting(state):
+    return "warriors" in state.nation.known
+
+
 def _talk_of_leading(state, char):
     """Whether people have begun to say this character should lead."""
     if not could_lead(state, char):
@@ -206,6 +210,12 @@ def _raid_resolve(state, event, taken, rng):
     n = state.neighbour(event.data.get("neighbour"))
     if n is None:
         return None
+    if "stand_guard" in event.data.get("taken_with", []):
+        stores = state.nation.stores
+        stores.add({"food": stores.get("food") * 0.1})
+        return (
+            f"The {n.name} came back for more and found your band waiting. They left with nothing."
+        )
     if "answer_raid" in event.data.get("taken_with", []):
         if rng.random() < 0.55 + 0.4 * n.relations:
             n.relations = min(1.0, n.relations + 0.2)
@@ -215,6 +225,19 @@ def _raid_resolve(state, event, taken, rng):
         adjust_settlements(state, cohesion=-3)
         return "Nothing was done about the raid. People talk of little else."
     return None
+
+
+def _challenge(state, char, rng):
+    met = [n for n in state.neighbours.values() if n.met]
+    if not met:
+        return None
+    n = rng.choice(met)
+    return EventInstance(
+        "challenge",
+        f"A champion of the {n.name} has come to the border and called for one of ours to "
+        f"fight him, for honour and not for blood.",
+        data={"neighbour": n.id},
+    )
 
 
 def _beast(state, char, rng):
@@ -469,9 +492,15 @@ EVENTS = [
         lambda s, c: max((raid_chance(s, n) for n in s.neighbours.values()), default=0.0),
         _raid,
         _raid_resolve,
-        answers=("answer_raid", "avenge_raid", "help_camp"),
-        expects=("answer_raid",),
+        answers=("answer_raid", "stand_guard", "avenge_raid", "help_camp"),
+        expects=("answer_raid", "stand_guard"),
         penalty=0.06,
+    ),
+    EventDef(
+        "challenge",
+        lambda s, c: 0.12 if c.station == "warrior" and _knows_fighting(s) else 0.0,
+        _challenge,
+        answers=("meet_challenge", "decline_challenge"),
     ),
     EventDef(
         "beast",

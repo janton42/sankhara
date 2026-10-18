@@ -457,6 +457,75 @@ def test_villages_grow_into_towns(state):
     assert any(s.kind == "village" for s in state.settlements.values())
 
 
+# --- how the people decide ----------------------------------------------------------
+
+
+def _ripen(state, did):
+    d = discoveries.DISCOVERIES[did]
+    state.nation.insight[d.id] = d.cost
+    _quiet(state)
+    game.end_year(state)
+    assert state.pending_choice == did
+
+
+def test_under_a_council_nobody_settles_a_custom_alone(state):
+    """A leader decides matters of custom, unless the people have a council of elders:
+    then the elders' leanings decide and the leader (or an elder) only speaks louder."""
+    discoveries.learn(state, "council", "elders")
+    _ripen(state, "gifts")
+    assert state.pending_mode == "voice"
+    assert game._voice(state) > 1 + state.player.means.get("regard") / game.VOICE_WEIGHT
+    assert {c.id for c in discoveries.deciders(state)} <= {
+        c.id for c in state.living() if c.is_elder or c.id == state.nation.leader_id
+    }
+
+
+def test_a_chief_who_holds_the_people_settles_every_custom(state):
+    discoveries.learn(state, "council", "strongest")
+    _ripen(state, "burial")  # a matter of lore, which a leader would not otherwise decide
+    assert state.pending_mode == "decide"
+    state.player.station = "hunter"
+    assert game._voice(state) < 1 + state.player.means.get("regard") / game.VOICE_WEIGHT
+
+
+def test_what_is_owed_to_the_leader_keeps_them(state):
+    from sankhara.sim import nation
+
+    leader = state.leader
+    leader.means.set("food", 0)
+    nation.households_year(state)
+    before = leader.means.get("food")
+    leader.means.set("food", 0)
+    discoveries.learn(state, "tribute", "leaders_share")
+    nation.households_year(state)
+    assert leader.means.get("food") > before
+
+
+def test_a_band_set_apart_to_fight_is_a_role_to_be_born_into(state):
+    assert "warrior" not in rebirth_weights(state.nation)
+    discoveries.learn(state, "warriors", "all_fight")
+    assert "warrior" not in rebirth_weights(state.nation)
+    discoveries.learn(state, "warriors", "war_band")
+    assert "warrior" in rebirth_weights(state.nation)
+
+
+def test_keeping_watch_turns_raiders_back(state):
+    from sankhara.sim.peoples import raid_chance
+
+    n = next(iter(state.neighbours.values()))
+    n.met = True
+    n.relations = -0.6
+    before = raid_chance(state, n)
+    _not_leading(state)
+    state.player.station = "warrior"
+    _quiet(state)
+    assert game.choose(state, 0, "keep_watch")
+    game.end_year(state)
+    assert raid_chance(state, n) < before
+    raid = _matter(state, "raid", data={"neighbour": n.id, "camp": state.seat.name})
+    assert raid.expected and "stand_guard" in raid.answers and "answer_raid" not in raid.answers
+
+
 # --- settling customs anew -------------------------------------------------------
 
 
