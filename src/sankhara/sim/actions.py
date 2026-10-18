@@ -20,11 +20,9 @@ from dataclasses import dataclass, field
 from sankhara.sim import discoveries, tendencies
 from sankhara.sim.nation import adjust_settlements, advance, clamp, land_richness, people_scale
 from sankhara.sim.people import (
-    FRAIL_HEALTH,
     LEADER_AGE,
-    STEP_ASIDE_AGE,
+    bid_to_lead,
     family_of,
-    make_leader,
     members,
     standing,
 )
@@ -470,16 +468,8 @@ def _stay_out(ctx):
 def _stand_forward(ctx):
     """Ask the people to follow you. They might, if they already look to you more than
     to the one who leads them, or that one is failing."""
-    state, me = ctx.state, ctx.char
-    leader = state.leader
-    ratio = standing(me) / max(1.0, standing(leader) if leader else 1.0)
-    chance = min(0.85, 0.05 + 0.6 * max(0.0, ratio - 0.8) + (0.3 if _failing(state) else 0.0))
-    if ctx.rng.random() < chance:
-        make_leader(state, me)
+    if bid_to_lead(ctx.state, ctx.char, ctx.rng):
         return "You stood before the people and asked them to follow you, and they did."
-    me.means.set("regard", me.means.get("regard") * 0.8)
-    if leader:
-        leader.adjust_affinity(me.id, -0.3)
     return "You stood before the people and asked them to follow you. Few did."
 
 
@@ -725,13 +715,6 @@ def _hard_bargain(ctx):
 
 
 # --- what an answer needs ---------------------------------------------------------
-
-
-def _failing(state):
-    leader = state.leader
-    return leader is None or (
-        leader.age(state.year) >= STEP_ASIDE_AGE or leader.health < FRAIL_HEALTH
-    )
 
 
 def could_lead(state, char):

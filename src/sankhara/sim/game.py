@@ -31,6 +31,8 @@ from sankhara.sim.people import (
     die,
     ensure_elders,
     family_of,
+    feels,
+    grudges_of,
     leadership_year,
     make_leader,
     succeed,
@@ -858,9 +860,9 @@ def around_you(state):
         and c is not leader
         and c.age(state.year) >= ADULT_AGE
     ]
-    near.sort(key=lambda c: (-abs(c.feels(player.id)), -c.means.get("regard")))
+    near.sort(key=lambda c: (-abs(feels(state, c, player)), -c.means.get("regard")))
     out += near[: AROUND_YOU - len(out)]
-    return [(c, c.feels(player.id)) for c in out]
+    return [(c, feels(state, c, player)) for c in out]
 
 
 def threads(state):
@@ -981,6 +983,10 @@ def begin_next_life(state):
     ]
     if nation.leader_id in (mother.id, father.id):
         lines[0] = lines[0].rsplit(",", 1)[0] + ", who lead the people."
+    for other, since in grudges_of(state, child.family_name):
+        lines.append(
+            f"The {child.family_name} and {other} families have not spoken since year {since}."
+        )
 
     # childhood passes without the player's hand
     legacy_before = len(state.legacy)
