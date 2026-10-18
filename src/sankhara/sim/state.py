@@ -123,6 +123,7 @@ class Nation:
     settled_in: dict[str, int] = field(default_factory=dict)  # discovery id -> year settled
     watched_until: int = 0  # the last year someone stood watch over the camps
     grudges: dict[str, int] = field(default_factory=dict)  # "A|B" -> year the families fell out
+    alliances: dict[str, int] = field(default_factory=dict)  # "A|B" -> year joined by marriage
     divided: int = 0  # the rival the people are divided over, if any
 
 
