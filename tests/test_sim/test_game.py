@@ -526,6 +526,74 @@ def test_keeping_watch_turns_raiders_back(state):
     assert raid.expected and "stand_guard" in raid.answers and "answer_raid" not in raid.answers
 
 
+# --- those around you ----------------------------------------------------------------
+
+
+def test_feuds_are_between_families_you_know(state):
+    from sankhara.sim.people import members
+
+    _quiet(state)
+    feud = events.EVENT_DEFS["feud"].build(state, state.player, state.rng())
+    state.events.append(events.offer(state, state.player, feud))
+    known = {c.family_name for c in state.living()}
+    assert feud.data["a"] in known and feud.data["b"] in known
+    a, b = feud.data["a"], feud.data["b"]
+    state.plan = [_answer(feud, "side_with"), None, None]
+    game.end_year(state)
+    assert all(c.feels(state.player_id) > 0 for c in members(state, a))
+    assert all(c.feels(state.player_id) < 0 for c in members(state, b) if c.alive)
+
+
+def test_a_rival_for_the_peoples_trust_is_a_matter_for_the_leader(state):
+    me = state.player
+    other = next(c for c in state.living() if c.id != me.id and c.age(state.year) >= 20)
+    other.means.set("regard", 100)
+    assert events.rival(state) is other
+    _quiet(state)
+    matter = _matter(state, "rival", target_id=other.id, data={"rival": other.name})
+    assert matter.answers == ["win_over", "make_room", "face_down"]
+    names = [o.name for o in game.options(state) if o.kind == "answer"]
+    assert f"Win {other.name} over" in names
+    me.means.set("regard", 300)
+    state.plan = [_answer(matter, "face_down"), None, None]
+    for _ in range(20):  # the stronger standing usually wins the exchange
+        before = other.means.get("regard")
+        game.end_year(state)
+        _quiet(state)
+        if other.means.get("regard") < before:
+            break
+        other.means.set("regard", 100)
+        matter = _matter(state, "rival", target_id=other.id, data={"rival": other.name})
+        state.plan = [_answer(matter, "face_down"), None, None]
+    assert other.means.get("regard") < 100
+    assert other.feels(me.id) < 0
+
+
+def test_others_ask_you_to_take_sides(state):
+    leader = _not_leading(state)
+    me = state.player
+    other = next(
+        c for c in state.living() if c.id not in (me.id, leader.id) and c.age(state.year) >= 20
+    )
+    other.means.set("regard", 100)
+    leader.means.set("regard", 50)
+    _quiet(state)
+    matter = _matter(state, "take_sides", target_id=other.id, data={"rival": other.name})
+    assert matter.answers == ["back_rival", "back_leader", "stay_out"]
+    state.plan = [_answer(matter, "back_rival"), None, None]
+    game.end_year(state)
+    assert other.feels(me.id) > 0 > leader.feels(me.id)
+
+
+def test_around_you_shows_the_leader_and_those_in_your_camp(state):
+    leader = _not_leading(state)
+    around = game.around_you(state)
+    assert around and around[0][0] is leader
+    assert len(around) <= game.AROUND_YOU
+    assert all(c.settlement_id == state.player.settlement_id for c, _ in around[1:])
+    assert not any(c.is_player for c, _ in around)
+
+
 # --- settling customs anew -------------------------------------------------------
 
 

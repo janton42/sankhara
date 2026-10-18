@@ -62,6 +62,20 @@ def regard_word(regard):
     )
 
 
+def feeling_word(affinity):
+    """How someone feels about you, in words."""
+    return _band(
+        affinity,
+        [
+            (0.5, "a friend to you"),
+            (0.2, "warm toward you"),
+            (-0.2, "neither warm nor cold"),
+            (-0.5, "cool toward you"),
+            (-9, "bears you a grudge"),
+        ],
+    )
+
+
 def budget_text(budget, nation):
     parts = []
     for c in categories(nation):

@@ -30,6 +30,7 @@ from sankhara.sim.people import (
     create_spouse,
     die,
     ensure_elders,
+    family_of,
     leadership_year,
     make_leader,
     succeed,
@@ -833,6 +834,33 @@ def _end_life(state, cause, lines):
     state.pending_mode = ""
     die(state, player, cause)
     state.life_over = True
+
+
+AROUND_YOU = 5
+
+
+def around_you(state):
+    """The people the player's life turns on, outside their family: whoever leads, and
+    those in their camp they have most to do with (strongest feelings first). Returns
+    (character, how they feel about the player) pairs."""
+    player = state.player
+    family = {c.id for _, c in family_of(state, player)}
+    out = []
+    leader = state.leader
+    if leader and not leader.is_player:
+        out.append(leader)
+    near = [
+        c
+        for c in state.living()
+        if c.settlement_id == player.settlement_id
+        and not c.is_player
+        and c.id not in family
+        and c is not leader
+        and c.age(state.year) >= ADULT_AGE
+    ]
+    near.sort(key=lambda c: (-abs(c.feels(player.id)), -c.means.get("regard")))
+    out += near[: AROUND_YOU - len(out)]
+    return [(c, c.feels(player.id)) for c in out]
 
 
 def threads(state):

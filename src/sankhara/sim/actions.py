@@ -25,6 +25,7 @@ from sankhara.sim.people import (
     STEP_ASIDE_AGE,
     family_of,
     make_leader,
+    members,
     standing,
 )
 from sankhara.sim.stations import ADULT_AGE, STATIONS
@@ -396,7 +397,74 @@ def _side_with(ctx):
     _gain(ctx, "regard", 2)
     _people(ctx, cohesion=-1)
     a = ctx.event.data.get("a", "one") if ctx.event else "one"
+    b = ctx.event.data.get("b", "") if ctx.event else ""
+    for c in members(ctx.state, a):
+        c.adjust_affinity(ctx.char.id, 0.3)
+    for c in members(ctx.state, b):
+        c.adjust_affinity(ctx.char.id, -0.3)
     return f"You stood with the {a} family, and said so to anyone who asked."
+
+
+# --- answers: a rival for the people's trust -------------------------------------------
+
+
+def _rival_of(ctx):
+    who = ctx.state.character(ctx.event.target_id) if ctx.event else None
+    return who if who and who.alive else None
+
+
+def _win_over(ctx):
+    r = _rival_of(ctx)
+    if r is None:
+        return "There was no one to win over."
+    r.adjust_affinity(ctx.char.id, 0.35)
+    ctx.char.adjust_affinity(r.id, 0.15)
+    r.means.add({"food": 6})
+    _people(ctx, cohesion=1)
+    return f"You sat long with {r.name}, gave gifts and listened. The talk died down."
+
+
+def _make_room(ctx):
+    r = _rival_of(ctx)
+    if r is None:
+        return "There was no one to make room for."
+    r.adjust_affinity(ctx.char.id, 0.4)
+    r.means.add({"regard": 3})
+    _gain(ctx, "regard", -1)
+    _people(ctx, cohesion=2)
+    return f"You gave {r.name} a place beside you, and let them speak first at the gathering."
+
+
+def _face_down(ctx):
+    r = _rival_of(ctx)
+    if r is None:
+        return "There was no one to face down."
+    mine, theirs = standing(ctx.char), standing(r)
+    r.adjust_affinity(ctx.char.id, -0.3)
+    if ctx.rng.random() < mine / max(1.0, mine + theirs):
+        r.means.set("regard", r.means.get("regard") * 0.7)
+        _gain(ctx, "regard", 3)
+        return f"You faced {r.name} down before everyone, and they had nothing to say."
+    ctx.char.means.set("regard", ctx.char.means.get("regard") * 0.85)
+    r.means.add({"regard": 3})
+    return f"You faced {r.name} down before everyone, and they answered you well. People noticed."
+
+
+def _back_rival(ctx):
+    r = _rival_of(ctx)
+    leader = ctx.state.leader
+    _gain(ctx, "regard", 1)
+    if r is None:
+        return "There was no one to speak for."
+    r.adjust_affinity(ctx.char.id, 0.3)
+    r.means.add({"regard": 2})
+    if leader:
+        leader.adjust_affinity(ctx.char.id, -0.3)
+    return f"You spoke for {r.name} at every fire that would hear you."
+
+
+def _stay_out(ctx):
+    return "You kept out of it, and said so to both."
 
 
 def _stand_forward(ctx):
@@ -419,6 +487,9 @@ def _back_leader(ctx):
     leader = ctx.state.leader
     _people(ctx, cohesion=1)
     _gain(ctx, "regard", 1)
+    r = _rival_of(ctx)
+    if r is not None and leader is not None and r.id != leader.id:
+        r.adjust_affinity(ctx.char.id, -0.2)
     if leader:
         leader.means.add({"regard": 3})
         leader.adjust_affinity(ctx.char.id, 0.2)
@@ -1084,6 +1155,57 @@ ACTION_LIST = [
         _back_leader,
         {"regard": 2},
         requires=_has_leader,
+    ),
+    Action(
+        "back_rival",
+        "Speak for {rival}",
+        "Say at the fires that it is time for someone else to lead.",
+        (),
+        ("ambitious",),
+        -0.01,
+        _back_rival,
+        {"regard": 1},
+        requires=_not_leading,
+    ),
+    Action(
+        "stay_out",
+        "Keep out of it",
+        "Let them settle it between themselves.",
+        (),
+        ("contemplative",),
+        0.0,
+        _stay_out,
+    ),
+    Action(
+        "win_over",
+        "Win {rival} over",
+        "Sit with them, give gifts, and listen until they are with you.",
+        ("leader",),
+        ("generous", "caring"),
+        0.03,
+        _win_over,
+        {"food": 6},
+        requires=_has_food(6),
+    ),
+    Action(
+        "make_room",
+        "Give {rival} a place beside you",
+        "Let them be heard first; the people are better led by two who agree.",
+        ("leader",),
+        ("caring", "contemplative"),
+        0.04,
+        _make_room,
+        {"regard": 2},
+    ),
+    Action(
+        "face_down",
+        "Face {rival} down before everyone",
+        "Make them say it to your face at the gathering, and answer them.",
+        ("leader",),
+        ("harsh", "ambitious"),
+        -0.04,
+        _face_down,
+        {"regard": 3},
     ),
     # those near you
     Action(
