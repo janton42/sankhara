@@ -131,7 +131,7 @@ class CharacterPanel(BoxLayout):
         if around:
             self.around_label.text = "\n".join(
                 f"{c.full_name}, {station_title(c, nation).lower()}  ·  "
-                + muted(feeling_word(feeling))
+                + muted(", ".join([feeling_word(feeling), *game.ties(state, c)]))
                 for c, feeling in around
             )
         else:
