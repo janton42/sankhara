@@ -865,7 +865,7 @@ def _drop_absent_helpers(state, project):
     ]
 
 
-def _note_for_player(state, text):
+def note_for_player(state, text):
     """Something the player should be stopped for, from work done outside their own turn."""
     state.__dict__.setdefault("_player_notes", []).append(text)
 
@@ -933,7 +933,7 @@ def _finish(state, project, char, rng):
     if project.worked_by and project.common:
         record(state, f"{line} (Begun by {project.started_by}.)", project.worked_by)
     if state.player_id in (project.leader_id, *project.helpers):
-        _note_for_player(state, f"Finished: {name}.")
+        note_for_player(state, f"Finished: {name}.")
     return line
 
 

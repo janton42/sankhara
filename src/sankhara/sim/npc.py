@@ -7,9 +7,10 @@ people to help. Every choice shapes who they are becoming."""
 import math
 
 from sankhara.sim import projects, tendencies
-from sankhara.sim.actions import Ctx, budget_for, cares_for, effective_cost
+from sankhara.sim.actions import Ctx, budget_for, cares_for, could_lead, effective_cost
 from sankhara.sim.events import lasting_answers
 from sankhara.sim.nation import capacity
+from sankhara.sim.people import bid_to_lead, feels, standing
 from sankhara.sim.stations import ADULT_AGE
 
 NPC_KARMA_RATE = 0.05
@@ -18,6 +19,9 @@ DEED_REGARD = 1.0
 JOIN_WEIGHT = 1.5  # helping with what is under way comes more naturally than beginning anew
 LEAVE_CHANCE = 0.12
 ELDER_REGARD = 2.0
+BID_CHANCE = 0.06  # a year in which someone who rivals the leader asks the people to follow
+BID_SHARE = 0.9  # standing, relative to the leader's, from which someone might ask
+GRUDGING = 0.2  # how little a work draws someone whose family bears its leader's a grudge
 
 
 def _crowded(state):
@@ -70,6 +74,45 @@ def choose_deed(state, char, rng):
     return _pick(options, weights, rng)
 
 
+def _liking(state, char, leader_id):
+    """How readily someone helps whoever leads a work: the liked draw helpers, and a
+    grudge between their families keeps people away."""
+    leader = state.character(leader_id) if leader_id else None
+    if leader is None:
+        return 1.5
+    return max(GRUDGING, 1 + feels(state, char, leader))
+
+
+def would_bid(state):
+    """Who might ask the people to follow them this year: the most respected of those who
+    stand nearly as high in the people's eyes as the leader, if anyone. (A failing leader
+    gives way on their own; nobody need push.)"""
+    leader = state.leader
+    if leader is None:
+        return None
+    rivals = [
+        c
+        for c in state.living()
+        if not c.is_player and could_lead(state, c) and standing(c) >= BID_SHARE * standing(leader)
+    ]
+    return max(rivals, key=standing) if rivals else None
+
+
+def _bid(state, char, rng):
+    """Someone the people talk of leading may ask them to follow. Returns a line or None."""
+    ambition = math.exp(3 * tendencies.affinity(char.tendencies, ("ambitious",)))
+    if rng.random() >= BID_CHANCE * ambition:
+        return None
+    was_led_by_player = state.leader is not None and state.leader.is_player
+    won = bid_to_lead(state, char, rng)
+    tendencies.strengthen(char.tendencies, ("ambitious",))
+    line = f"{char.full_name} stood before the people and asked them to follow. "
+    line += "They did." if won else "Few did."
+    if was_led_by_player and not won:
+        projects.note_for_player(state, line)
+    return line
+
+
 def _draw(state, project):
     """How strongly a work draws others in: people called to it, and who leads it."""
     leader = state.character(project.leader_id)
@@ -102,7 +145,7 @@ def choose_work(state, char, rng):
             continue
         choices.append(("join", p))
         pull = math.exp(3 * tendencies.affinity(char.tendencies, d.tags))
-        liking = 1 + max(0.0, char.feels(p.leader_id)) if p.leader_id else 1.5
+        liking = _liking(state, char, p.leader_id)
         weights.append(
             JOIN_WEIGHT * pull * liking * _draw(state, p) * situational(state, char, d.id)
         )
@@ -119,10 +162,16 @@ def npc_year(state, protect=()):
     """Every tracked adult NPC acts for the year. Returns notable log lines."""
     rng = state.rng()
     notes = []
+    bidder = would_bid(state)
     for char in list(state.living()):
         if char.is_player or char.id in protect or char.age(state.year) < ADULT_AGE:
             continue
         leading = char.station == "leader"
+        if char is bidder:
+            bid = _bid(state, char, rng)
+            if bid:
+                notes.append(bid)
+                leading = char.station == "leader"
 
         # take something on, or drift away from what they were helping with
         for project in state.helping(char.id):

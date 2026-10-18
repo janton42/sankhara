@@ -122,6 +122,7 @@ class Nation:
     names: dict[str, str] = field(default_factory=dict)  # display names: categories, titles
     settled_in: dict[str, int] = field(default_factory=dict)  # discovery id -> year settled
     watched_until: int = 0  # the last year someone stood watch over the camps
+    grudges: dict[str, int] = field(default_factory=dict)  # "A|B" -> year the families fell out
 
 
 @dataclass

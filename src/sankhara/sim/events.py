@@ -18,11 +18,12 @@ from sankhara.sim import discoveries
 from sankhara.sim.actions import ACTIONS, could_lead, open_to
 from sankhara.sim.nation import adjust_settlements, people_scale, refresh_averages
 from sankhara.sim.people import (
-    FRAIL_HEALTH,
     LEADER_AGE,
-    STEP_ASIDE_AGE,
     die,
     family_of,
+    grudge,
+    grudge_key,
+    leader_failing,
     members,
     standing,
 )
@@ -160,16 +161,21 @@ def _feud(state, char, rng):
             and c.age(state.year) >= ADULT_AGE
         }
     )
-    if len(names) >= 2:
+    old = [
+        key.split("|")
+        for key in state.nation.grudges
+        if set(key.split("|")) <= set(names) and grudge(state, *key.split("|"))
+    ]
+    text = "The {a} and {b} families are at each other's throats over a broken promise."
+    if old and rng.random() < OLD_GRUDGE_FLARES:
+        a, b = rng.choice(old)
+        text = "The old grudge between the {a} and {b} families has flared up again."
+    elif len(names) >= 2:
         a, b = rng.sample(names, 2)
     else:
         a = make_family_name(state.nation.culture, rng)
         b = make_family_name(state.nation.culture, rng)
-    return EventInstance(
-        "feud",
-        f"The {a} and {b} families are at each other's throats over a broken promise.",
-        data={"a": a, "b": b},
-    )
+    return EventInstance("feud", text.format(a=a, b=b), data={"a": a, "b": b})
 
 
 def _estrange(state, a, b, amount):
@@ -184,10 +190,12 @@ def _feud_resolve(state, event, taken, rng):
     a, b = event.data["a"], event.data["b"]
     peacemaking = {"judge_feud", "make_peace"} & set(event.data.get("taken_with", []))
     if peacemaking and rng.random() < 0.8:
+        state.nation.grudges.pop(grudge_key(a, b), None)
         return f"The {a} and {b} families made their peace."
-    if not taken and not event.expected:
-        return None  # the player stood aside; it ran its own course
+    if not taken and not event.expected and rng.random() < 0.5:
+        return None  # the player stood aside, and it blew over
     _estrange(state, a, b, 0.3)
+    state.nation.grudges[grudge_key(a, b)] = state.year  # remembered by their children
     if rng.random() < 0.4:
         men = [c for c in members(state, a) if c.gender == "male" and not c.is_player]
         if men:
@@ -205,7 +213,9 @@ def _feud_resolve(state, event, taken, rng):
 
 # --- who would lead ----------------------------------------------------------------
 
+OLD_GRUDGE_FLARES = 0.7  # a feud that flares between families with an old grudge
 RIVAL_SHARE = 0.6  # standing, relative to the leader's, at which someone is a rival to them
+FOLLOWERS_DRAWN = 0.05  # how much a rival's unanswered talk warms their camp toward them
 RIVAL_REGARD = 15
 
 
@@ -252,6 +262,10 @@ def _rival_resolve(state, event, taken, rng):
         return None
     r.means.add({"regard": 2})
     adjust_settlements(state, cohesion=-1)
+    # and draws people after them
+    for c in state.living():
+        if c.settlement_id == r.settlement_id and c is not r and c.age(state.year) >= ADULT_AGE:
+            c.adjust_affinity(r.id, FOLLOWERS_DRAWN)
     return f"Talk of {r.name} leading went unanswered, and grew."
 
 
@@ -272,14 +286,20 @@ def _knows_fighting(state):
     return "warriors" in state.nation.known
 
 
-def _talk_of_leading(state, char):
+def outshines(state, char):
+    """Whether the people look to this character more than to the one who leads them, by
+    enough that they talk of it."""
+    leader = state.leader
+    if leader is None or not could_lead(state, char):
+        return False
+    return standing(char) > TALK_OF_LEADING * standing(leader)
+
+
+def talk_of_leading(state, char):
     """Whether people have begun to say this character should lead."""
     if not could_lead(state, char):
         return False
-    leader = state.leader
-    if leader is None or leader.age(state.year) >= STEP_ASIDE_AGE or leader.health < FRAIL_HEALTH:
-        return True
-    return standing(char) > TALK_OF_LEADING * standing(leader)
+    return leader_failing(state) or outshines(state, char)
 
 
 def _could_lead_build(state, char, rng):
@@ -566,7 +586,7 @@ EVENTS = [
     ),
     EventDef(
         "could_lead",
-        lambda s, c: 0.4 if _talk_of_leading(s, c) else 0.0,
+        lambda s, c: 0.4 if talk_of_leading(s, c) else 0.0,
         _could_lead_build,
         answers=("stand_forward", "back_leader"),
     ),
