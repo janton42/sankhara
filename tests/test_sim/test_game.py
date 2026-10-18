@@ -1077,3 +1077,86 @@ def test_a_marriage_ends_a_feud_and_its_grudge(state):
     game.end_year(state)
     assert not people.grudge(state, a, b)
     assert any("were wed" in line for line in state.log[-30:])
+
+
+# --- matches between families ------------------------------------------------------
+
+
+def _unwed_pair(state):
+    """The player made grown and unwed, and someone of another family they could wed."""
+    me = state.player
+    me.spouse_id = None
+    me.birth_year = state.year - 22
+    other = people.create_character(
+        state,
+        "gatherer",
+        me.settlement_id,
+        state.year - 21,
+        gender="female" if me.gender == "male" else "male",
+        family_name="Otherkin",
+    )
+    return me, other
+
+
+def test_the_player_is_offered_a_match_and_can_take_it(state):
+    me, other = _unwed_pair(state)
+    _quiet(state)
+    match = events.EVENT_DEFS["match"].build(state, me, state.rng())
+    assert match is not None and match.target_id in {c.id for c, _ in people.matches_for(state, me)}
+    match.target_id, match.data = other.id, {"match": other.name, "family": "Otherkin"}
+    state.events.append(events.offer(state, me, match))
+    assert match.answers == ["accept_match", "refuse_match"]
+    me.means.add({"food": 10})
+    state.plan = [_answer(match, "accept_match"), None, None]
+    game.end_year(state)
+    assert me.spouse_id == other.id and other.spouse_id == me.id
+    assert people.allied(state, me.family_name, "Otherkin")
+    husband = me if me.gender == "male" else other
+    assert other.family_name == husband.family_name or other is husband
+    cousin = people.create_character(
+        state, "hunter", me.settlement_id, state.year - 30, family_name="Otherkin"
+    )
+    if me.family_name != "Otherkin":
+        assert "kin by marriage" in game.ties(state, cousin)
+        assert people.feels(state, cousin, me) == pytest.approx(people.ALLIANCE_WARMTH)
+
+
+def test_refusing_a_match_offends_the_family(state):
+    me, other = _unwed_pair(state)
+    _quiet(state)
+    match = _matter(
+        state, "match", target_id=other.id, data={"match": other.name, "family": "Otherkin"}
+    )
+    state.plan = [_answer(match, "refuse_match"), None, None]
+    game.end_year(state)
+    assert me.spouse_id is None and other.feels(me.id) < 0
+
+
+def test_no_match_across_a_grudge_or_with_close_kin(state):
+    me, other = _unwed_pair(state)
+    assert other in [c for c, _ in people.matches_for(state, me)]
+    state.nation.grudges[people.grudge_key(me.family_name, "Otherkin")] = state.year
+    assert other not in [c for c, _ in people.matches_for(state, me)]
+    for c, _ in people.matches_for(state, me):
+        assert c.family_name != me.family_name and not people._close_kin(me, c)
+
+
+def test_a_mother_the_player_lives_as_bears_children(state):
+    me, other = _unwed_pair(state)
+    if me.gender != "female":
+        me.gender, other.gender = "female", "male"
+    people.wed(state, me, other)
+    me.death_age = 200
+    for _ in range(40):
+        if me.children:
+            break
+        state.events = []
+        people.yearly_lifecycle(state)
+        state.year += 1
+    assert me.children
+
+
+def test_people_wed_within_the_known_families(play):
+    s = game.new_game(seed=5)
+    play(s, 150, seed=5)
+    assert s.nation.alliances

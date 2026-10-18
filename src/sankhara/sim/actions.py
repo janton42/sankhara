@@ -22,12 +22,14 @@ from sankhara.sim.nation import adjust_settlements, advance, clamp, land_richnes
 from sankhara.sim.people import (
     LEADER_AGE,
     bid_to_lead,
+    create_character,
     faction,
     family_of,
     members,
     standing,
+    wed,
 )
-from sankhara.sim.stations import ADULT_AGE, STATIONS
+from sankhara.sim.stations import ADULT_AGE, BAND_ROLES, STATIONS
 
 FOOD_ROLES = ("hunter", "gatherer", "fisher", "planter", "herder")
 
@@ -393,6 +395,51 @@ def _judge_feud(ctx):
 
 def _make_peace(ctx):
     return "You went between the two families, carrying words."
+
+
+def _match_of(ctx):
+    """The one offered, made known now if they were not before."""
+    if ctx.event is None:
+        return None
+    if ctx.event.target_id is None:
+        data, me = ctx.event.data, ctx.char
+        who = create_character(
+            ctx.state,
+            rng_role(ctx),
+            me.settlement_id,
+            ctx.state.year - data.get("age", me.age(ctx.state.year)),
+            gender="female" if me.gender == "male" else "male",
+            family_name=data.get("family"),
+        )
+        who.name = data.get("match", who.name)
+        ctx.event.target_id = who.id
+        return who
+    who = ctx.state.character(ctx.event.target_id)
+    return who if who and who.alive and who.spouse_id is None else None
+
+
+def rng_role(ctx):
+    roles = [r for r in BAND_ROLES if r != "keeper"]
+    return ctx.rng.choice(roles)
+
+
+def _accept_match(ctx):
+    match = _match_of(ctx)
+    if match is None or ctx.char.spouse_id is not None:
+        return "The match came to nothing."
+    family = match.family_name
+    for c in members(ctx.state, family):
+        c.adjust_affinity(ctx.char.id, 0.1)
+    wed(ctx.state, ctx.char, match)
+    return f"You took {match.name} of the {family} family as your mate, and both families feasted."
+
+
+def _refuse_match(ctx):
+    data = ctx.event.data if ctx.event else {}
+    family = data.get("family", "")
+    for c in members(ctx.state, family) if family else []:
+        c.adjust_affinity(ctx.char.id, -0.15)
+    return f"You turned the {family} family's offer away. They took it ill."
 
 
 def _join_families(ctx):
@@ -1155,6 +1202,26 @@ ACTION_LIST = [
         ("ambitious", "harsh"),
         -0.03,
         _side_with,
+    ),
+    Action(
+        "accept_match",
+        "Take {match} as your mate",
+        "Join your life to theirs, and your family to the {family}.",
+        (),
+        ("caring",),
+        0.02,
+        _accept_match,
+        {"food": 4},
+        requires=_has_food(4),
+    ),
+    Action(
+        "refuse_match",
+        "Refuse the match",
+        "Not this one. Their family will not be pleased.",
+        (),
+        ("contemplative",),
+        0.0,
+        _refuse_match,
     ),
     Action(
         "join_families",

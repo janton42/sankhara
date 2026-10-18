@@ -19,15 +19,17 @@ from sankhara.sim.actions import ACTIONS, could_lead, open_to
 from sankhara.sim.nation import adjust_settlements, people_scale, refresh_averages
 from sankhara.sim.people import (
     LEADER_AGE,
+    ally,
     die,
     family_of,
     grudge,
     grudge_key,
     leader_failing,
-    marry,
     members,
+    pick_match,
     standing,
     support,
+    wed,
 )
 from sankhara.sim.peoples import raid_chance
 from sankhara.sim.state import EventInstance
@@ -183,7 +185,7 @@ def _feud(state, char, rng):
 def _joined(state, a, b, rng):
     """A marriage ends a feud for good: the grudge is gone and the families warm to each
     other. If each has someone grown and unwed, they are the ones who marry."""
-    state.nation.grudges.pop(grudge_key(a, b), None)
+    ally(state, a, b)
     _estrange(state, a, b, -0.2)
     unwed = [
         [c for c in members(state, f) if c.spouse_id is None and not c.is_player] for f in (a, b)
@@ -193,8 +195,7 @@ def _joined(state, a, b, rng):
         women = [c for c in other if c.gender == "female" and c.age(state.year) >= ADULT_AGE]
         if men and women:
             man, woman = rng.choice(men), rng.choice(women)
-            marry(man, woman)
-            woman.family_name = man.family_name
+            wed(state, man, woman)
             return (
                 f"{man.full_name} and {woman.name} were wed, and the {a} and {b} families are kin."
             )
@@ -241,6 +242,7 @@ def _feud_resolve(state, event, taken, rng):
 
 OLD_GRUDGE_FLARES = 0.7  # a feud that flares between families with an old grudge
 RIVAL_SHARE = 0.6  # standing, relative to the leader's, at which someone is a rival to them
+MATCH_CHANCE = 0.3  # a year in which a family offers the unwed player a match
 DIVIDED_COHESION = 0.5  # a year's fraying while the people are divided
 FOLLOWERS_DRAWN = 0.05  # how much a rival's unanswered talk warms their camp toward them
 RIVAL_REGARD = 15
@@ -287,6 +289,35 @@ def divided_year(state):
     if split:
         return f"The people are divided between {leader.full_name} and {r.full_name}."
     return "The people are of one mind again about who leads them."
+
+
+def _match_open(state, char):
+    """Whether the player is grown, unwed and young enough to be offered a match."""
+    return char.is_player and char.spouse_id is None and ADULT_AGE <= char.age(state.year) <= 40
+
+
+def _match_build(state, char, rng):
+    """A family offers the player a match: someone known if there is anyone fitting,
+    otherwise someone of a family the player has had little to do with (who is only
+    tracked once the match is taken)."""
+    from sankhara.entities.namer import make_family_name, make_first_name
+
+    match = pick_match(state, char, rng)
+    if match is not None:
+        name, family, age = match.name, match.family_name, match.age(state.year)
+        target = match.id
+    else:
+        gender = "female" if char.gender == "male" else "male"
+        name = make_first_name(state.nation.culture, gender, rng)
+        family = make_family_name(state.nation.culture, rng)
+        age = max(ADULT_AGE, char.age(state.year) + rng.randint(-5, 5))
+        target = None
+    return EventInstance(
+        "match",
+        f"The {family} family would see you wed to {name}, aged {age}.",
+        target_id=target,
+        data={"match": name, "family": family, "age": age},
+    )
 
 
 def _divided_build(state, char, rng):
@@ -669,6 +700,12 @@ EVENTS = [
         _rival_build,
         _rival_resolve,
         answers=("win_over", "make_room", "face_down"),
+    ),
+    EventDef(
+        "match",
+        lambda s, c: MATCH_CHANCE if _match_open(s, c) else 0.0,
+        _match_build,
+        answers=("accept_match", "refuse_match"),
     ),
     EventDef(
         "divided",

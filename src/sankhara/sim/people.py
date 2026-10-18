@@ -102,12 +102,85 @@ def grudges_of(state, family_name):
     return out
 
 
+def allied(state, a, b):
+    """Whether these two families are joined by a marriage within living memory."""
+    if a == b:
+        return False
+    year = state.nation.alliances.get(grudge_key(a, b))
+    return year is not None and state.year - year <= GRUDGE_YEARS
+
+
+def ally(state, a, b):
+    """Two families are joined by a marriage: any grudge between them is ended."""
+    if a != b:
+        state.nation.grudges.pop(grudge_key(a, b), None)
+        state.nation.alliances[grudge_key(a, b)] = state.year
+
+
 def feels(state, who, other):
     """How `who` feels toward `other`, counting what stands between their families."""
     feeling = who.feels(other.id)
     if grudge(state, who.family_name, other.family_name):
         feeling -= GRUDGE_COOL
-    return max(-1.0, feeling)
+    elif allied(state, who.family_name, other.family_name):
+        feeling += ALLIANCE_WARMTH
+    return max(-1.0, min(1.0, feeling))
+
+
+# --- matches between families ---------------------------------------------------
+
+MATCH_AGE_GAP = 10
+KNOWN_MATCH_CHANCE = 0.6  # how often a tracked person weds within the known families
+ALLIANCE_WARMTH = 0.15  # how much warmer families joined by marriage are to each other
+
+
+def _close_kin(a, b):
+    return (
+        b.id in (a.mother_id, a.father_id)
+        or a.id in (b.mother_id, b.father_id)
+        or bool({a.mother_id, a.father_id} & {b.mother_id, b.father_id} - {None})
+    )
+
+
+def matches_for(state, char):
+    """Grown, unwed people of another family whom `char` might wed, with how readily:
+    by how the two feel about each other, never across a grudge."""
+    age = char.age(state.year)
+    out = []
+    for c in state.living():
+        if (
+            c is char
+            or c.is_player
+            or c.spouse_id is not None
+            or c.gender == char.gender
+            or c.family_name == char.family_name
+            or c.age(state.year) < ADULT_AGE
+            or abs(c.age(state.year) - age) > MATCH_AGE_GAP
+            or c.station == "leader"
+            or _close_kin(char, c)
+            or grudge(state, char.family_name, c.family_name)
+        ):
+            continue
+        out.append((c, math.exp(2 * (feels(state, char, c) + feels(state, c, char)))))
+    return out
+
+
+def pick_match(state, char, rng):
+    found = matches_for(state, char)
+    if not found:
+        return None
+    people, weights = zip(*found, strict=True)
+    return rng.choices(people, weights)[0]
+
+
+def wed(state, a, b):
+    """Two people of the people marry: the wife joins the husband's family (unless she is
+    the one the player lives as), and their families become allies."""
+    husband, wife = (a, b) if a.gender == "male" else (b, a)
+    ally(state, husband.family_name, wife.family_name)
+    marry(husband, wife)
+    if not wife.is_player:
+        wife.family_name = husband.family_name
 
 
 def child_role(state, parent, rng):
@@ -127,6 +200,11 @@ def marry(a, b):
 def create_spouse(state, char):
     """A spouse for `char`: from among the people, or from a people they've met."""
     rng = state.rng()
+    if rng.random() < KNOWN_MATCH_CHANCE:
+        match = pick_match(state, char, rng)
+        if match is not None:
+            wed(state, char, match)
+            return match
     gender = "female" if char.gender == "male" else "male"
     age = max(ADULT_AGE, char.age(state.year) + rng.randint(-5, 5))
     friendly = [n for n in state.neighbours.values() if n.met and n.relations > -0.2]
@@ -251,9 +329,10 @@ def yearly_lifecycle(state, protect=()):
 
     for char in list(state.living()):
         age = char.age(state.year)
-        if char.is_player or age < ADULT_AGE:
+        if age < ADULT_AGE:
             continue
-        if char.spouse_id is None and age <= 40 and is_tracked_lineage(state, char):
+        unwed = char.spouse_id is None and age <= 40 and not char.is_player
+        if unwed and is_tracked_lineage(state, char):
             if rng.random() < MARRIAGE_CHANCE:
                 spouse = create_spouse(state, char)
                 if char.id in near:

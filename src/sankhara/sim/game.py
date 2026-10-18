@@ -32,6 +32,7 @@ from sankhara.sim.nation import (
 from sankhara.sim.npc import npc_year
 from sankhara.sim.people import (
     age_and_health,
+    allied,
     child_role,
     create_character,
     create_spouse,
@@ -886,6 +887,8 @@ def ties(state, char):
     out = []
     if grudge(state, char.family_name, player.family_name):
         out.append(f"the {char.family_name} and your family are at odds")
+    elif allied(state, char.family_name, player.family_name):
+        out.append("kin by marriage")
     r, leader = rival(state), state.leader
     if r is not None and leader is not None and char is not r and char is not leader:
         if char in faction(state, r, leader):
