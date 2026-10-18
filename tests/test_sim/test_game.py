@@ -550,6 +550,7 @@ def test_a_rival_for_the_peoples_trust_is_a_matter_for_the_leader(state):
     me = state.player
     other = next(c for c in state.living() if c.id != me.id and c.age(state.year) >= 20)
     other.means.set("regard", 100)
+    me.means.add({"food": 20})
     assert events.rival(state) is other
     _quiet(state)
     matter = _matter(state, "rival", target_id=other.id, data={"rival": other.name})
@@ -1177,11 +1178,11 @@ def _with_in_laws(state):
 
 def test_kin_by_marriage_ask_for_help_and_remember_the_answer(state):
     me, cousin = _with_in_laws(state)
+    me.means.add({"food": 20})
     _quiet(state)
     ask = events.offer(state, me, events.EVENT_DEFS["kin_asks"].build(state, me, state.rng()))
     state.events.append(ask)
     assert ask.expected and ask.answers == ["share_with_kin", "refuse_kin"]
-    me.means.add({"food": 20})
     before = cousin.feels(me.id)
     state.plan = [_answer(ask, "share_with_kin"), None, None]
     game.end_year(state)
@@ -1297,3 +1298,90 @@ def test_a_planter_can_move_the_stones_and_be_found_out(state, monkeypatch):
     )
     assert "found out" in line
     assert people.grudge(state, family, state.player.family_name)
+
+
+# --- temptations, and what follows -------------------------------------------------
+
+
+def _tempt(state, kind):
+    _quiet(state)
+    built = events.EVENT_DEFS[kind].build(state, state.player, state.rng())
+    assert built is not None, kind
+    matter = events.offer(state, state.player, built)
+    state.events.append(matter)
+    return matter
+
+
+def _do(state, matter, action_id):
+    return actions.ACTIONS[action_id].effect(actions.Ctx(state, state.player, state.rng(), matter))
+
+
+def test_unguarded_stores_can_be_taken_and_the_theft_found_out(state, monkeypatch):
+    matter = _tempt(state, "unguarded")
+    assert matter.answers == ["steal_stores", "leave_stores", "guard_stores"]
+    family = matter.data["family"]
+    before = state.player.means.get("food")
+    monkeypatch.setattr(actions, "_found_out", lambda ctx, *a, **k: "")
+    _do(state, matter, "steal_stores")
+    assert state.player.means.get("food") == before + actions.STOLEN
+    assert not people.grudge(state, family, state.player.family_name)  # not found out
+
+
+def test_an_insult_can_be_answered_with_fists(state):
+    matter = _tempt(state, "insult")
+    assert matter.answers == ["strike", "answer_back", "let_pass"]
+    who = state.character(matter.target_id)
+    health = who.health
+    _do(state, matter, "strike")
+    assert who.health < health and who.feels(state.player_id) < 0
+
+
+def test_an_affair_found_out_turns_the_wronged_against_you(state, monkeypatch):
+    me, other = _unwed_pair(state)
+    spouse = people.create_character(
+        state, "hunter", me.settlement_id, state.year - 25, gender=me.gender
+    )
+    people.marry(spouse, other)
+    matter = _matter(state, "desire", target_id=other.id, data={"family": other.family_name})
+    assert matter.answers == ["affair", "keep_away"]
+    monkeypatch.setattr(actions, "AFFAIR_FOUND_OUT", 1.0)
+    assert "came out" in _do(state, matter, "affair")
+    assert spouse.feels(me.id) < 0
+    assert people.grudge(state, spouse.family_name, me.family_name)
+
+
+def test_an_enemy_can_be_killed_and_blood_is_then_owed(state, monkeypatch):
+    me = state.player
+    foe = _other_adult(state, me)
+    foe.adjust_affinity(me.id, -0.9)
+    matter = _tempt(state, "enemy_alone")
+    assert matter.target_id == foe.id
+    assert matter.answers == ["kill", "confront", "let_be"]
+    monkeypatch.setattr(actions, "KILLING_FOUND_OUT", 1.0)
+    _do(state, matter, "kill")
+    assert not foe.alive
+    owed = state.nation.blood_owed
+    if people.members(state, foe.family_name):
+        assert owed[foe.family_name] == [me.id, foe.name]
+        _quiet(state)
+        debt = events.offer(state, me, events.EVENT_DEFS["blood_owed"].build(state, me, None))
+        assert debt.answers[1:] == ["flee", "stand_ground"]
+        me.means.add({"food": 40})
+        state.events.append(events.offer(state, me, debt))
+        assert debt.answers == ["pay_blood_price", "flee", "stand_ground"]
+        state.plan = [_answer(debt, "pay_blood_price"), None, None]
+        me.death_age = 200
+        game.end_year(state)
+        assert foe.family_name not in owed
+
+
+def test_those_owed_blood_may_come_for_it(state, monkeypatch):
+    me = state.player
+    me.death_age = 200
+    foe = _other_adult(state, me)
+    state.nation.blood_owed[foe.family_name] = [me.id, "someone"]
+    monkeypatch.setattr(events, "VENGEANCE", 1.0)
+    _quiet(state)
+    _matter(state, "blood_owed", data={"family": foe.family_name, "victim": "someone"})
+    report = game.end_year(state)
+    assert report.life_ended and "vengeance" in me.cause_of_death

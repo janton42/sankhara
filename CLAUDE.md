@@ -20,7 +20,8 @@ and a graph centred on the player).
 - Only `main` and `develop` live long (`gh-pages` is the docs site, built by CI).
 - New work: a branch from `develop` in its own worktree
   (`git worktree add ../sankhara-wt/<name> -b <name> develop`), a PR with
-  `--base develop`, merged back into `develop`, then the branch and worktree removed.
+  `--base develop`; the user reviews and merges it (never merge your own PRs), then
+  the branch and worktree are removed.
 - `develop` goes to `main` when the user decides.
 
 ## Commands

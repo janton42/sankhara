@@ -23,6 +23,7 @@ from sankhara.sim.people import (
     LEADER_AGE,
     bid_to_lead,
     create_character,
+    die,
     faction,
     family_of,
     grudge_key,
@@ -74,6 +75,10 @@ class Action:
 
 
 OWN_SHARE = 0.5
+STOLEN = 15  # food taken from another family's unguarded stores
+FIGHT_STARTS_FEUD = 0.25
+AFFAIR_FOUND_OUT = 0.3
+KILLING_FOUND_OUT = 0.5
 NEWCOMERS = 5  # people in a family that comes to settle
 FOUND_OUT = 0.35  # chance a wrong done in secret comes out
 HEARD_OUT = 0.15  # how much a rival's followers warm to a leader who comes to hear them
@@ -666,17 +671,159 @@ def _family_of_matter(ctx):
     return ctx.event.data.get("family", "") if ctx.event else ""
 
 
-def _found_out(ctx, chance, what):
-    """A wrong done in secret may come out. Returns a line to add, or ''."""
+def _found_out(ctx, chance, what, family=None, cool=0.4, kept=0.85):
+    """A wrong done in secret may come out: the wronged family cools toward the one who
+    did it, a grudge begins between the families, and standing falls (to `kept` of what
+    it was). Returns a line to add, or ''."""
     if ctx.rng.random() >= chance:
         return ""
-    family = _family_of_matter(ctx)
+    family = family if family is not None else _family_of_matter(ctx)
     for c in members(ctx.state, family):
-        c.adjust_affinity(ctx.char.id, -0.4)
-    ctx.char.means.set("regard", ctx.char.means.get("regard") * 0.85)
+        c.adjust_affinity(ctx.char.id, -cool)
+    ctx.char.means.set("regard", ctx.char.means.get("regard") * kept)
     if family and family != ctx.char.family_name:
         ctx.state.nation.grudges[grudge_key(family, ctx.char.family_name)] = ctx.state.year
     return f" The {family} family found out about {what}, and will not forget it."
+
+
+# --- answers: temptations ------------------------------------------------------------
+
+
+def _steal_stores(ctx):
+    _gain(ctx, "food", STOLEN)
+    return "You filled a basket from their stores and carried it home in the dark." + _found_out(
+        ctx, 0.4, "the theft"
+    )
+
+
+def _leave_stores(ctx):
+    return "You walked past their stores and left them be."
+
+
+def _guard_stores(ctx):
+    _warm_family(ctx, 0.1)
+    _gain(ctx, "regard", 1)
+    return "You kept an eye on their stores until they came back, and told them so."
+
+
+def _fighting_strength(ctx, char):
+    trained = 0.3 if char.station in ("hunter", "warrior") else 0.0
+    return char.health / 100 + tendencies.affinity(char.tendencies, ("harsh",)) + trained
+
+
+def _strike(ctx):
+    who = _target(ctx)
+    if who is None:
+        return "There was no one to strike."
+    mine, theirs = _fighting_strength(ctx, ctx.char), _fighting_strength(ctx, who)
+    heal(ctx.char, -ctx.rng.uniform(4, 14))
+    heal(who, -ctx.rng.uniform(4, 14))
+    who.adjust_affinity(ctx.char.id, -0.4)
+    _warm_family(ctx, -0.15)
+    _local(ctx, cohesion=-1)
+    if ctx.rng.random() < FIGHT_STARTS_FEUD and who.family_name != ctx.char.family_name:
+        ctx.state.nation.grudges[grudge_key(who.family_name, ctx.char.family_name)] = ctx.state.year
+    if ctx.rng.random() < mine / max(0.1, mine + theirs):
+        _gain(ctx, "regard", 2)
+        return f"You struck {who.name} down before everyone. No one laughs at you now."
+    _gain(ctx, "regard", -2)
+    return f"You went for {who.name}, and came off the worse. People talked of it for days."
+
+
+def _answer_back(ctx):
+    who = _target(ctx)
+    _gain(ctx, "regard", 1)
+    if who:
+        who.adjust_affinity(ctx.char.id, -0.2)
+    return "You answered them so that the whole fire laughed, at them this time."
+
+
+def _let_pass(ctx):
+    return "You let it pass. Words are only words."
+
+
+def _affair(ctx):
+    who = _target(ctx)
+    if who is None:
+        return "It came to nothing."
+    who.adjust_affinity(ctx.char.id, 0.4)
+    ctx.char.adjust_affinity(who.id, 0.3)
+    line = "You met in secret, more than once."
+    if ctx.rng.random() >= AFFAIR_FOUND_OUT:
+        return line
+    wronged = [ctx.state.character(c.spouse_id) for c in (who, ctx.char)]
+    wronged = [w for w in wronged if w and w.alive]
+    for w in wronged:
+        w.adjust_affinity(ctx.char.id, -0.6)
+        w.adjust_affinity(who.id, -0.5)
+        for kin in members(ctx.state, w.family_name):
+            if kin is not w and kin is not ctx.char:
+                kin.adjust_affinity(ctx.char.id, -0.2)
+        if w.family_name != ctx.char.family_name:
+            key = grudge_key(w.family_name, ctx.char.family_name)
+            ctx.state.nation.grudges[key] = ctx.state.year
+    ctx.char.means.set("regard", ctx.char.means.get("regard") * 0.85)
+    return line + " It came out, as such things do."
+
+
+def _keep_away(ctx):
+    return "You kept away from them, though it was not easy."
+
+
+def _kill(ctx):
+    who = _target(ctx)
+    if who is None or not who.alive:
+        return "They were not there."
+    family = who.family_name
+    die(ctx.state, who, "a killing no one saw")
+    line = f"{who.full_name} did not come back from the river."
+    out = _found_out(ctx, KILLING_FOUND_OUT, "who killed them", family=family, cool=0.8, kept=0.5)
+    if out:
+        _local(ctx, cohesion=-3)
+        ctx.state.nation.blood_owed[family] = [ctx.char.id, who.name]
+        return line + f" The {family} family know who did it, and say blood is owed."
+    return line + " No one knows who did it."
+
+
+def _confront(ctx):
+    who = _target(ctx)
+    if who:
+        who.adjust_affinity(ctx.char.id, 0.2)
+        ctx.char.adjust_affinity(who.id, 0.1)
+    return "You went to them alone and said what lay between you. It was a start."
+
+
+def _let_be(ctx):
+    return "You let them go their way."
+
+
+def _owed_family(ctx):
+    return ctx.event.data.get("family", "") if ctx.event else ""
+
+
+def _pay_blood_price(ctx):
+    family = _owed_family(ctx)
+    ctx.state.nation.blood_owed.pop(family, None)
+    for c in members(ctx.state, family):
+        c.adjust_affinity(ctx.char.id, 0.3)
+    return f"You paid the {family} family what a life is worth among the people. It is settled."
+
+
+def _flee(ctx):
+    camps = [s for s in ctx.state.settlements.values() if s.id != ctx.char.settlement_id]
+    if not camps:
+        return "There was nowhere to go."
+    camp = ctx.rng.choice(camps)
+    ctx.char.settlement_id = camp.id
+    for c in _family(ctx):
+        if c.age(ctx.state.year) < ADULT_AGE or c.id == ctx.char.spouse_id:
+            c.settlement_id = camp.id
+    return f"You left in the night with your own, and made a new hearth at {camp.name}."
+
+
+def _stand_ground(ctx):
+    _gain(ctx, "regard", 1)
+    return "You let it be known you would be waiting for them."
 
 
 def _warm_family(ctx, amount):
@@ -1705,6 +1852,136 @@ ACTION_LIST = [
         ("acquisitive",),
         0.0,
         _ask_reward,
+    ),
+    # temptations
+    Action(
+        "steal_stores",
+        "Take from their stores",
+        "No one is watching. They have more than they need.",
+        (),
+        ("acquisitive",),
+        -0.06,
+        _steal_stores,
+    ),
+    Action(
+        "leave_stores",
+        "Leave them be",
+        "It is not yours.",
+        (),
+        ("contemplative",),
+        0.01,
+        _leave_stores,
+    ),
+    Action(
+        "guard_stores",
+        "Watch over them till they return",
+        "Others may not be so honest.",
+        (),
+        ("caring",),
+        0.02,
+        _guard_stores,
+        {"hands": 1},
+    ),
+    Action(
+        "strike",
+        "Strike them",
+        "Answer with your fists, here and now.",
+        (),
+        ("harsh",),
+        -0.05,
+        _strike,
+    ),
+    Action(
+        "answer_back",
+        "Answer them in kind",
+        "A sharper tongue, before the same fire.",
+        (),
+        ("ambitious",),
+        -0.01,
+        _answer_back,
+    ),
+    Action(
+        "let_pass",
+        "Let it pass",
+        "Say nothing. It will be forgotten.",
+        (),
+        ("contemplative",),
+        0.03,
+        _let_pass,
+    ),
+    Action(
+        "affair",
+        "Meet them in secret",
+        "What no one knows harms no one. Or so it seems.",
+        (),
+        ("indulgent",),
+        -0.05,
+        _affair,
+    ),
+    Action(
+        "keep_away",
+        "Keep away from them",
+        "Some fires are better left unlit.",
+        (),
+        ("contemplative",),
+        0.01,
+        _keep_away,
+    ),
+    Action(
+        "kill",
+        "Follow them to the river",
+        "No one else will be there.",
+        (),
+        ("harsh",),
+        -0.3,
+        _kill,
+    ),
+    Action(
+        "confront",
+        "Go and speak with them",
+        "Say what lies between you, alone.",
+        (),
+        ("caring",),
+        0.03,
+        _confront,
+    ),
+    Action(
+        "let_be",
+        "Let them go",
+        "Whatever lies between you can wait.",
+        (),
+        ("contemplative",),
+        0.02,
+        _let_be,
+    ),
+    Action(
+        "pay_blood_price",
+        "Pay the blood-price",
+        "Food and goods for a life, as the people reckon it.",
+        (),
+        ("generous",),
+        0.04,
+        _pay_blood_price,
+        {"food": 30},
+        requires=_has_food(30),
+    ),
+    Action(
+        "flee",
+        "Take your own and go",
+        "Make a new hearth at another camp, out of their reach.",
+        (),
+        ("contemplative",),
+        0.0,
+        _flee,
+    ),
+    Action(
+        "stand_ground",
+        "Wait for them",
+        "If they come, they come.",
+        (),
+        ("harsh",),
+        -0.01,
+        _stand_ground,
     ),
     Action(
         "sit_with_dying",

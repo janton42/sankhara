@@ -70,6 +70,7 @@ class Character:
     is_player: bool = False
     is_elder: bool = False
     former_station: str = ""  # what a leader did before the people turned to them
+    doom: str = ""  # a death already decided (a killing), taken at the year's end
 
     def age(self, year):
         return year - self.birth_year
@@ -124,6 +125,7 @@ class Nation:
     watched_until: int = 0  # the last year someone stood watch over the camps
     grudges: dict[str, int] = field(default_factory=dict)  # "A|B" -> year the families fell out
     alliances: dict[str, int] = field(default_factory=dict)  # "A|B" -> year joined by marriage
+    blood_owed: dict[str, list] = field(default_factory=dict)  # family -> [killer id, victim]
     divided: int = 0  # the rival the people are divided over, if any
 
 

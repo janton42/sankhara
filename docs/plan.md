@@ -27,7 +27,7 @@ and not all be good.
    one's single choice, and the matter becomes something else (newcomers settling,
    traders at the market). Hunters meet hunters' matters, keepers keepers'. The
    size of the people and what they know set which matters arise at all.
-2. **Harm you can start.** Under "your own", deeds that do harm: take from
+2. **Harm you can start** (begun: theft, fights, affairs, killing, blood owed; lies and cheating in exchange to come). Under "your own", deeds that do harm: take from
    another family's stores, start a fight, spread a lie about someone, an affair,
    cheat in an exchange, and, at the far end, kill a rival. They can work, may be
    found out, and bring grudges, feuds, exile or revenge. Weighed by intention,

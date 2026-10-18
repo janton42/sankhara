@@ -12,6 +12,7 @@ it; ignoring it then costs karma, and any answer meets it, each with its own
 weight. Meeting it guarantees nothing. Outcomes are deliberately not fair.
 """
 
+import math
 from dataclasses import dataclass
 
 from sankhara.sim import discoveries, say, tendencies
@@ -248,6 +249,8 @@ KIN_SLIGHTED = 0.1  # how much kin by marriage cool when their need is ignored
 KIN_WARM = 0.1  # how warm kin must feel toward you to send help unasked
 KIN_GIFT = 8
 BARE_HEARTH = 15  # a family's food below which kin may send help
+ENEMY = -0.4  # how ill someone must feel toward you to be an enemy
+VENGEANCE = 0.3  # a year in which those owed blood come for it
 MATCH_CHANCE = 0.3  # a year in which a family offers the unwed player a match
 DIVIDED_COHESION = 0.5  # a year's fraying while the people are divided
 FOLLOWERS_DRAWN = 0.05  # how much a rival's unanswered talk warms their camp toward them
@@ -605,6 +608,127 @@ def _newcomers(state, char, rng):
     )
 
 
+def _others_near(state, char):
+    """Grown people of other families in the player's camp."""
+    return [
+        c
+        for c in _neighbours_of(state, char)
+        if c.family_name != char.family_name and c.age(state.year) >= ADULT_AGE
+    ]
+
+
+def _unguarded(state, char, rng):
+    near = _others_near(state, char)
+    if not near:
+        return None
+    who = rng.choice(near)
+    return EventInstance(
+        "unguarded",
+        f"The {who.family_name} family have gone to the gathering, and left their stores "
+        "unguarded.",
+        target_id=who.id,
+        data={"family": who.family_name},
+    )
+
+
+def _insult(state, char, rng):
+    near = _others_near(state, char)
+    if not near:
+        return None
+    weights = [math.exp(-3 * feels(state, c, char)) for c in near]
+    who = rng.choices(near, weights)[0]
+    return EventInstance(
+        "insult",
+        f"{who.full_name} mocked you before everyone at the fire.",
+        target_id=who.id,
+        data={"family": who.family_name},
+    )
+
+
+def _desire(state, char, rng):
+    near = [
+        c
+        for c in _others_near(state, char)
+        if c.gender != char.gender
+        and abs(c.age(state.year) - char.age(state.year)) <= 15
+        and (c.spouse_id is not None or char.spouse_id is not None)
+    ]
+    if not near:
+        return None
+    who = rng.choice(near)
+    whose = state.character(who.spouse_id)
+    who_text = f"{who.full_name}, {whose.name}'s mate," if whose else who.full_name
+    return EventInstance(
+        "desire",
+        f"{who_text} seeks your company whenever no one else is near.",
+        target_id=who.id,
+        data={"family": who.family_name},
+    )
+
+
+def _enemies(state, char):
+    return [
+        c
+        for c in state.living()
+        if not c.is_player
+        and c.age(state.year) >= ADULT_AGE
+        and c.id not in {k.id for _, k in family_of(state, char)}
+        and feels(state, c, char) <= ENEMY
+    ]
+
+
+def _enemy_alone(state, char, rng):
+    foes = _enemies(state, char)
+    if not foes:
+        return None
+    who = min(foes, key=lambda c: feels(state, c, char))
+    return EventInstance(
+        "enemy_alone",
+        f"{who.full_name}, who bears you nothing but ill will, goes alone to the river at dawn.",
+        target_id=who.id,
+        data={"family": who.family_name},
+    )
+
+
+def _owed_by(state, char):
+    return [
+        (family, victim)
+        for family, (killer, victim) in state.nation.blood_owed.items()
+        if killer == char.id and members(state, family)
+    ]
+
+
+def _blood_owed(state, char, rng):
+    owed = _owed_by(state, char)
+    if not owed:
+        return None
+    family, victim = owed[0]
+    return EventInstance(
+        "blood_owed",
+        f"The {family} family say blood is owed for {victim}.",
+        data={"family": family, "victim": victim},
+    )
+
+
+def _blood_owed_resolve(state, event, taken, rng):
+    family = event.data["family"]
+    if family not in state.nation.blood_owed:
+        return None
+    taken_with = event.data.get("taken_with", [])
+    player = state.player
+    if "flee" in taken_with and rng.random() < 0.6:
+        return f"The {family} family did not follow you."
+    if rng.random() >= VENGEANCE:
+        return None
+    if "stand_ground" in taken_with and rng.random() < 0.6:
+        player.health = max(1.0, player.health - 35)
+        state.nation.blood_owed.pop(family, None)
+        return f"Men of the {family} family came for you, and you were ready. You live, barely."
+    state.nation.blood_owed.pop(family, None)
+    player.doom = f"the {family} family's vengeance"
+    return f"Men of the {family} family came for you in the night."
+
+
 def _claim(kind, text):
     """A role matter about what is whose, with a known family of the player's camp."""
 
@@ -898,6 +1022,37 @@ EVENTS = [
         penalty=0.05,
     ),
     # near you
+    EventDef(
+        "unguarded",
+        lambda s, c: 0.05,
+        _unguarded,
+        answers=("steal_stores", "leave_stores", "guard_stores"),
+    ),
+    EventDef(
+        "insult",
+        lambda s, c: 0.06,
+        _insult,
+        answers=("strike", "answer_back", "let_pass"),
+    ),
+    EventDef(
+        "desire",
+        lambda s, c: 0.04,
+        _desire,
+        answers=("affair", "keep_away"),
+    ),
+    EventDef(
+        "enemy_alone",
+        lambda s, c: 0.08 if c.is_player and _enemies(s, c) else 0.0,
+        _enemy_alone,
+        answers=("kill", "confront", "let_be"),
+    ),
+    EventDef(
+        "blood_owed",
+        lambda s, c: 0.9 if c.is_player and _owed_by(s, c) else 0.0,
+        _blood_owed,
+        _blood_owed_resolve,
+        answers=("pay_blood_price", "flee", "stand_ground"),
+    ),
     EventDef(
         "newcomers",
         lambda s, c: 0.08 if say.scale(s) == "town" and say.has_say(s, c) else 0.0,
