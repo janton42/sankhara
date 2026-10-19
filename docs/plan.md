@@ -36,7 +36,7 @@ and not all be good.
    but sit uneasily by ours: blood-price instead of judgement, ordeal, taking
    captives after a raid, a bride-price, keeping seed back from the hungry for
    next year's planting.
-4. **Choices that grow with what the people know.** Each later idea brings new
+4. **Choices that grow with what the people know** (built: lending and debts with a market, false marks with writing, levies for the wall, the leader's share). Each later idea brings new
    deeds and matters for the roles it touches: debts and lending with a market,
    records (and false ones) with writing, levies of labour with walls, collecting
    (and skimming) tribute.

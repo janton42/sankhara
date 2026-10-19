@@ -16,6 +16,8 @@ SHARE_AMOUNT = 0.3  # share of a discovery's cost an idea brings
 CONTACT_CHANCE = 0.02
 WATCHED = 0.5  # how much likelier raids are to be turned back while someone keeps watch
 NEAR_CONTACT = 0.12  # extra chance a year when ranges come within reach of each other
+WALL_YEARS = 15  # years a wall stands unmended before it is half fallen
+FALLEN_WALL = 0.5  # share of what the wall gave that is lost once it has fallen
 
 
 def place_neighbours(state, culture_for, rng):
@@ -139,12 +141,23 @@ def neighbours_year(state, rng):
     return notes, interrupts
 
 
+def wall_age(state):
+    """Years since the wall was built or last mended (0 if there is none)."""
+    nation = state.nation
+    if "walls" not in nation.known:
+        return 0
+    return state.year - max(nation.walls_mended, nation.settled_in.get("walls", state.year))
+
+
 def raid_chance(state, n):
     """How likely they are to raid us this year: worse relations and a quicker temper make
     it likelier; walls and those set apart to fight make it less so."""
     if not n.met or n.relations > -0.1:
         return 0.0
-    guarded = 1 - min(0.8, discoveries.fx(state, "defence"))
+    defence = discoveries.fx(state, "defence")
+    if wall_age(state) > WALL_YEARS:
+        defence -= FALLEN_WALL * discoveries.DISCOVERIES["walls"].effects["defence"]
+    guarded = 1 - min(0.8, defence)
     if state.nation.watched_until >= state.year:
         guarded *= WATCHED
     return min(0.35, 0.2 * -n.relations * (0.5 + n.temper)) * guarded

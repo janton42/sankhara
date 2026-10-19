@@ -128,6 +128,8 @@ class Nation:
     blood_owed: dict[str, list] = field(default_factory=dict)  # family -> [killer id, victim]
     seed_kept: int = 0  # the last year seed was kept back from the hungry for planting
     divided: int = 0  # the rival the people are divided over, if any
+    debts: list[dict] = field(default_factory=list)  # {"by", "to", "food", "due"}
+    walls_mended: int = 0  # the last year the wall was mended
 
 
 @dataclass
