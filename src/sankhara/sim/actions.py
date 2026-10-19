@@ -31,6 +31,7 @@ from sankhara.sim.people import (
     standing,
     wed,
 )
+from sankhara.sim.peoples import WALL_YEARS
 from sankhara.sim.stations import ADULT_AGE, BAND_ROLES, STATIONS
 
 FOOD_ROLES = ("hunter", "gatherer", "fisher", "planter", "herder")
@@ -87,6 +88,13 @@ FOUND_OUT = 0.35  # chance a wrong done in secret comes out
 HEARD_OUT = 0.15  # how much a rival's followers warm to a leader who comes to hear them
 STOOD_DOWN = 0.25  # how much a rival's followers cool toward one who stands down
 MARRIAGE_STANDING = 10  # standing needed to be heard offering a marriage between families
+LOAN = 10  # food lent to a neighbour until the harvests have turned
+LOAN_YEARS = 2
+FOR_MORE = 1.5  # what is asked back for a loan made for more
+GIFT_FOR_MARKS = 8  # what a family gives to have its claim set down
+WALL_FOOD = 6
+SHARE = 6  # a family's share due at the leader's store
+SURPLUS = 15  # the year's shares beyond what the people need, before their size
 
 
 def budget_for(state, char, action):
@@ -776,6 +784,225 @@ def _keep_seed(ctx):
     return "You kept the seed back for planting, and the hungry went on being hungry."
 
 
+# --- answers: what grows with later ideas ------------------------------------------
+
+
+def _lend(ctx, back, line):
+    who = _target(ctx)
+    if who is None or ctx.char.means.get("food") < LOAN:
+        return "You had nothing to lend."
+    _gain(ctx, "food", -LOAN)
+    who.means.add({"food": LOAN})
+    ctx.state.nation.debts.append(
+        {
+            "by": who.id,
+            "to": ctx.char.id,
+            "food": round(LOAN * back),
+            "due": ctx.state.year + LOAN_YEARS,
+        }
+    )
+    return line.format(name=who.name)
+
+
+def _lend_food(ctx):
+    _warm_family(ctx, 0.1)
+    return _lend(ctx, 1.0, "You lent {name} what they asked, to be given back in time.")
+
+
+def _lend_for_more(ctx):
+    return _lend(ctx, FOR_MORE, "You lent {name} what they asked, for more to be given back.")
+
+
+def _give_outright(ctx):
+    who = _target(ctx)
+    if who is None or ctx.char.means.get("food") < LOAN:
+        return "You had nothing to give."
+    _gain(ctx, "food", -LOAN)
+    who.means.add({"food": LOAN})
+    _warm_family(ctx, 0.2)
+    _gain(ctx, "regard", 1)
+    return f"You gave {who.name} what they asked, and wanted nothing back."
+
+
+def _refuse_loan(ctx):
+    who = _target(ctx)
+    if who:
+        who.adjust_affinity(ctx.char.id, -0.1)
+    return "You kept what you had."
+
+
+def _debt(ctx):
+    """The debt the matter is about, if it is still owed."""
+    data = ctx.event.data if ctx.event else {}
+    return next(
+        (d for d in ctx.state.nation.debts if d["by"] == data.get("by") and d["to"] == ctx.char.id),
+        None,
+    )
+
+
+def _settled(ctx, debt):
+    ctx.state.nation.debts.remove(debt)
+
+
+def _forgive_debt(ctx):
+    debt = _debt(ctx)
+    if debt is None:
+        return "There was nothing left owed."
+    _settled(ctx, debt)
+    _warm_family(ctx, 0.25)
+    _gain(ctx, "regard", 1)
+    return "You told them they owed you nothing."
+
+
+def _take_what_they_have(ctx):
+    debt, who = _debt(ctx), _target(ctx)
+    if debt is None or who is None:
+        return "There was nothing left owed."
+    _settled(ctx, debt)
+    got = min(debt["food"], max(0.0, who.means.get("food")))
+    who.means.add({"food": -got})
+    _gain(ctx, "food", got)
+    _warm_family(ctx, -0.3)
+    if ctx.rng.random() < 0.3:
+        ctx.state.nation.grudges[grudge_key(who.family_name, ctx.char.family_name)] = ctx.state.year
+    return f"You took what {who.name} had, though it left their hearth bare."
+
+
+def _work_off_debt(ctx):
+    debt = _debt(ctx)
+    if debt is None:
+        return "There was nothing left owed."
+    _settled(ctx, debt)
+    _gain(ctx, "food", debt["food"] * 0.6)
+    _warm_family(ctx, -0.1)
+    return "They worked your ground for a year to pay what they owed."
+
+
+def _wait_longer(ctx):
+    debt = _debt(ctx)
+    if debt is None:
+        return "There was nothing left owed."
+    debt["due"] = ctx.state.year + LOAN_YEARS
+    _warm_family(ctx, 0.05)
+    return "You told them it could wait for better years."
+
+
+def _mark_as_it_is(ctx):
+    _warm_family(ctx, -0.1)
+    for c in members(ctx.state, ctx.event.data.get("other", "")):
+        c.adjust_affinity(ctx.char.id, 0.1)
+    return "You set down what everyone knows: it is not theirs."
+
+
+def _mark_for_them(ctx):
+    _gain(ctx, "food", GIFT_FOR_MARKS)
+    _warm_family(ctx, 0.2)
+    other = ctx.event.data.get("other", "")
+    return "You set down what they asked, and they did not come empty-handed." + _found_out(
+        ctx, 0.4, "the false marks", family=other, kept=0.75
+    )
+
+
+def _mark_both_claims(ctx):
+    return "You set down both claims, and let others decide between them."
+
+
+def _call_levy(ctx):
+    ctx.state.nation.walls_mended = ctx.state.year
+    _people(ctx, cohesion=-1)
+    _gain(ctx, "regard", 2)
+    return "Every family sent hands, grumbling, and the wall stands again."
+
+
+def _levy_spare_kin(ctx):
+    ctx.state.nation.walls_mended = ctx.state.year
+    _people(ctx, cohesion=-1.5)
+    _gain(ctx, "food", WALL_FOOD)
+    others = [
+        c
+        for c in ctx.state.living()
+        if c.settlement_id == ctx.char.settlement_id and c.family_name != ctx.char.family_name
+    ]
+    if not others:
+        return "Every family sent hands but yours, and the wall stands again."
+    family = ctx.rng.choice(others).family_name
+    for c in members(ctx.state, family):
+        c.adjust_affinity(ctx.char.id, -0.2)
+    if ctx.rng.random() < 0.4:
+        ctx.state.nation.grudges[grudge_key(family, ctx.char.family_name)] = ctx.state.year
+    return (
+        f"Every family sent hands but yours, and the wall stands again. "
+        f"The {family} family noticed."
+    )
+
+
+def _ask_willing(ctx):
+    ctx.state.nation.walls_mended = ctx.state.year - WALL_YEARS // 2
+    _people(ctx, cohesion=0.5)
+    return "Those who were willing came, and the worst of the wall was mended."
+
+
+def _work_wall(ctx):
+    _gain(ctx, "regard", 1)
+    return "You carried earth and timber with the rest."
+
+
+def _send_food_for_wall(ctx):
+    return "You sent food for those at the wall instead of your own hands."
+
+
+def _shirk_wall(ctx):
+    if ctx.rng.random() >= FOUND_OUT:
+        return "You found reasons to be elsewhere, and no one said anything."
+    ctx.char.means.set("regard", ctx.char.means.get("regard") * 0.8)
+    _local(ctx, cohesion=-0.5)
+    return "You found reasons to be elsewhere, and people noticed who was missing."
+
+
+def _surplus(ctx):
+    return SURPLUS * people_scale(ctx.state)
+
+
+def _shares_to_stores(ctx):
+    ctx.state.nation.stores.add({"food": _surplus(ctx)})
+    return "You put what came in beyond your needs into the common stores."
+
+
+def _keep_shares(ctx):
+    _gain(ctx, "food", SURPLUS)
+    if ctx.rng.random() >= 0.3:
+        return "What came in beyond your needs went to your own family, and no one asked."
+    ctx.char.means.set("regard", ctx.char.means.get("regard") * 0.8)
+    _people(ctx, cohesion=-2)
+    return "What came in beyond your needs went to your own family, and it became known."
+
+
+def _shares_to_needy(ctx):
+    camps = sorted(ctx.state.settlements.values(), key=lambda s: s.plenty)
+    _local(ctx, cohesion=1, plenty=3, camp=camps[0])
+    _gain(ctx, "regard", 1)
+    return f"You sent what came in beyond your needs to the hungriest hearths of {camps[0].name}."
+
+
+def _leader_family(ctx):
+    leader = ctx.state.leader
+    return leader.family_name if leader else ""
+
+
+def _pay_share(ctx):
+    leader = ctx.state.leader
+    if leader:
+        leader.means.add({"food": SHARE})
+        leader.adjust_affinity(ctx.char.id, 0.05)
+    return "You brought your family's share to the leader's store."
+
+
+def _hide_share(ctx):
+    return "You brought less than your share, and said it was a lean year." + _found_out(
+        ctx, 0.3, "the hidden share", family=_leader_family(ctx)
+    )
+
+
 def _steal_stores(ctx):
     _gain(ctx, "food", STOLEN)
     return "You filled a basket from their stores and carried it home in the dark." + _found_out(
@@ -1242,6 +1469,18 @@ def _not_judging(state, char):
 
 def _not_leading(state, char):
     return char.station != "leader"
+
+
+def _lends(state, char):
+    return char.means.get("food") >= LOAN
+
+
+def keeps_marks(state, char):
+    return "writing" in state.nation.known and (char.station == "keeper" or say.judges(state, char))
+
+
+def leads_with_shares(state, char):
+    return char.station == "leader" and state.nation.known.get("tribute") == "leaders_share"
 
 
 ACTION_LIST = [
@@ -2052,6 +2291,223 @@ ACTION_LIST = [
         0.0,
         _keep_seed,
         requires=_plants,
+    ),
+    # what grows with later ideas
+    Action(
+        "lend_food",
+        "Lend it",
+        "To be given back when the harvests turn.",
+        (),
+        ("caring",),
+        0.02,
+        _lend_food,
+        requires=_lends,
+    ),
+    Action(
+        "lend_for_more",
+        "Lend it, for more back",
+        "Food now is worth more than food later.",
+        (),
+        ("acquisitive",),
+        -0.02,
+        _lend_for_more,
+        requires=_lends,
+    ),
+    Action(
+        "give_outright",
+        "Give it outright",
+        "What would you do with a debt?",
+        (),
+        ("generous",),
+        0.04,
+        _give_outright,
+        requires=_lends,
+    ),
+    Action(
+        "refuse_loan",
+        "Refuse",
+        "You have your own to feed.",
+        (),
+        ("acquisitive",),
+        -0.01,
+        _refuse_loan,
+    ),
+    Action(
+        "forgive_debt",
+        "Forgive the debt",
+        "Let it go.",
+        (),
+        ("generous",),
+        0.04,
+        _forgive_debt,
+    ),
+    Action(
+        "take_what_they_have",
+        "Take what they have",
+        "A debt is a debt.",
+        (),
+        ("harsh", "acquisitive"),
+        -0.04,
+        _take_what_they_have,
+    ),
+    Action(
+        "work_off_debt",
+        "Have them work it off",
+        "Their hands on your ground, for a year.",
+        (),
+        ("ambitious",),
+        -0.01,
+        _work_off_debt,
+    ),
+    Action(
+        "wait_longer",
+        "Let it wait",
+        "Better years will come.",
+        (),
+        ("caring",),
+        0.02,
+        _wait_longer,
+    ),
+    Action(
+        "mark_as_it_is",
+        "Mark it as it is",
+        "The marks should say what is so.",
+        (),
+        ("studious",),
+        0.03,
+        _mark_as_it_is,
+        requires=keeps_marks,
+    ),
+    Action(
+        "mark_for_them",
+        "Mark it as they ask",
+        "Once it is in the marks, it is so.",
+        (),
+        ("acquisitive",),
+        -0.05,
+        _mark_for_them,
+        requires=keeps_marks,
+    ),
+    Action(
+        "mark_both_claims",
+        "Mark both claims",
+        "It is not yours to settle.",
+        (),
+        ("contemplative",),
+        0.01,
+        _mark_both_claims,
+        requires=keeps_marks,
+    ),
+    Action(
+        "call_levy",
+        "Call every family to the wall",
+        "Hands from every hearth, for as long as it takes.",
+        (),
+        ("diligent",),
+        0.02,
+        _call_levy,
+        requires=_has_say,
+    ),
+    Action(
+        "levy_spare_kin",
+        "Call the others to the wall",
+        "Your own family has work enough already.",
+        (),
+        ("ambitious", "acquisitive"),
+        -0.04,
+        _levy_spare_kin,
+        requires=_has_say,
+    ),
+    Action(
+        "ask_willing",
+        "Ask for those willing",
+        "No one made to come.",
+        (),
+        ("caring",),
+        0.01,
+        _ask_willing,
+        requires=_has_say,
+    ),
+    Action(
+        "work_wall",
+        "Go to the wall",
+        "Earth and timber, with everyone else.",
+        (),
+        ("diligent",),
+        0.02,
+        _work_wall,
+        {"hands": 2},
+        requires=_no_say,
+    ),
+    Action(
+        "send_food_for_wall",
+        "Send food instead",
+        "Others' hands, fed from your hearth.",
+        (),
+        ("generous",),
+        0.01,
+        _send_food_for_wall,
+        {"food": WALL_FOOD},
+        requires=_no_say,
+    ),
+    Action(
+        "shirk_wall",
+        "Keep away from it",
+        "There is always something else to do.",
+        (),
+        ("indulgent",),
+        -0.02,
+        _shirk_wall,
+        requires=_no_say,
+    ),
+    Action(
+        "shares_to_stores",
+        "Put it in the common stores",
+        "It was given for the people.",
+        (),
+        ("diligent",),
+        0.02,
+        _shares_to_stores,
+        requires=leads_with_shares,
+    ),
+    Action(
+        "keep_shares",
+        "Keep it for your family",
+        "It was given to you.",
+        (),
+        ("acquisitive",),
+        -0.04,
+        _keep_shares,
+        requires=leads_with_shares,
+    ),
+    Action(
+        "shares_to_needy",
+        "Send it to the hungriest",
+        "Those with least gave the most.",
+        (),
+        ("generous", "caring"),
+        0.04,
+        _shares_to_needy,
+        requires=leads_with_shares,
+    ),
+    Action(
+        "pay_share",
+        "Bring your share",
+        "As every family does.",
+        (),
+        ("diligent",),
+        0.01,
+        _pay_share,
+        {"food": SHARE},
+    ),
+    Action(
+        "hide_share",
+        "Bring less, and say it was a lean year",
+        "Who counts?",
+        (),
+        ("acquisitive",),
+        -0.03,
+        _hide_share,
     ),
     # temptations
     Action(

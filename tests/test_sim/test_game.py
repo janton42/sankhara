@@ -1341,6 +1341,7 @@ def test_an_affair_found_out_turns_the_wronged_against_you(state, monkeypatch):
     spouse = people.create_character(
         state, "hunter", me.settlement_id, state.year - 25, gender=me.gender
     )
+    spouse.family_name = me.family_name + "x"  # a family other than yours
     people.marry(spouse, other)
     matter = _matter(state, "desire", target_id=other.id, data={"family": other.family_name})
     assert matter.answers == ["affair", "keep_away"]
@@ -1456,3 +1457,90 @@ def test_seed_kept_back_from_the_hungry_makes_next_harvest_better(state):
     _do(state, hunger, "keep_seed")
     assert state.nation.seed_kept == state.year
     assert nation.SEED_KEPT_HARVEST > 1
+
+
+def test_with_a_market_a_neighbour_may_borrow_and_the_debt_fall_due(state):
+    me = state.player
+    who = _other_adult(state, me)
+    who.means.set("food", 0)
+    me.means.set("food", 50)
+    assert events.EVENT_DEFS["asks_loan"].chance(state, me) == 0
+    state.nation.known["market"] = ""
+    matter = _tempt(state, "asks_loan")
+    assert matter.answers == ["lend_food", "lend_for_more", "give_outright", "refuse_loan"]
+    matter.target_id = who.id
+    _do(state, matter, "lend_for_more")
+    assert me.means.get("food") == 50 - actions.LOAN
+    [debt] = state.nation.debts
+    assert debt["food"] > actions.LOAN and debt["by"] == who.id
+
+    assert events.EVENT_DEFS["debt_due"].chance(state, me) == 0
+    state.year = debt["due"]
+    who.means.set("food", 0)
+    due = _tempt(state, "debt_due")
+    assert due.answers == ["forgive_debt", "take_what_they_have", "work_off_debt", "wait_longer"]
+    _do(state, due, "wait_longer")
+    assert state.nation.debts and events.EVENT_DEFS["debt_due"].chance(state, me) == 0
+
+    state.year = debt["due"]
+    who.means.set("food", 100)
+    repaid = _tempt(state, "debt_due")
+    assert repaid.answers == [] and not state.nation.debts
+    assert who.means.get("food") == 100 - debt["food"]
+
+
+def test_whoever_keeps_the_marks_can_set_down_a_false_claim(state):
+    me = state.player
+    state.nation.known["writing"] = ""
+    matter = _tempt(state, "false_mark")
+    assert matter.answers == ["mark_as_it_is", "mark_for_them", "mark_both_claims"]
+    before = me.means.get("food")
+    _do(state, matter, "mark_for_them")
+    assert me.means.get("food") == before + actions.GIFT_FOR_MARKS
+    _not_leading(state)
+    _settle_as(state, "village")
+    assert events.EVENT_DEFS["false_mark"].chance(state, me) == 0
+
+
+def test_a_wall_left_unmended_falls_and_must_be_levied(state):
+    from sankhara.sim import peoples
+
+    me = state.player
+    n = next(iter(state.neighbours.values()))
+    n.met, n.relations, n.temper = True, -0.8, 0.5
+    state.nation.known["walls"] = ""
+    state.nation.settled_in["walls"] = state.year
+    kept = peoples.raid_chance(state, n)
+    assert events.EVENT_DEFS["wall_crumbling"].chance(state, me) == 0
+    state.year += peoples.WALL_YEARS + 1
+    assert peoples.raid_chance(state, n) > kept
+    matter = _tempt(state, "wall_crumbling")
+    assert matter.answers == ["call_levy", "levy_spare_kin", "ask_willing"] and matter.expected
+    _do(state, matter, "call_levy")
+    assert peoples.wall_age(state) == 0
+
+    _not_leading(state)
+    _settle_as(state, "village")
+    state.year += peoples.WALL_YEARS + 1
+    matter = _tempt(state, "wall_crumbling")
+    assert matter.answers == ["work_wall", "send_food_for_wall", "shirk_wall"]
+    events.resolve_events(state, state.plan)
+    assert peoples.wall_age(state) == 0  # the others mended it
+
+
+def test_where_the_leader_takes_a_share_it_can_be_kept_or_hidden(state):
+    me = state.player
+    assert events.EVENT_DEFS["shares_in"].chance(state, me) == 0
+    state.nation.known["tribute"] = "leaders_share"
+    matter = _tempt(state, "shares_in")
+    assert matter.answers == ["shares_to_stores", "keep_shares", "shares_to_needy"]
+    before = me.means.get("food")
+    _do(state, matter, "keep_shares")
+    assert me.means.get("food") == before + actions.SURPLUS
+
+    leader = _not_leading(state)
+    assert events.EVENT_DEFS["shares_in"].chance(state, me) == 0
+    due = _tempt(state, "share_due")
+    assert due.answers == ["pay_share", "hide_share"] and due.expected
+    events.resolve_events(state, state.plan)
+    assert leader.feels(me.id) < 0

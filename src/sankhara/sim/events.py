@@ -16,7 +16,7 @@ import math
 from dataclasses import dataclass
 
 from sankhara.sim import discoveries, say, tendencies
-from sankhara.sim.actions import ACTIONS, could_lead, open_to
+from sankhara.sim.actions import ACTIONS, LOAN, could_lead, keeps_marks, leads_with_shares, open_to
 from sankhara.sim.nation import adjust_settlements, people_scale, refresh_averages
 from sankhara.sim.people import (
     LEADER_AGE,
@@ -34,7 +34,7 @@ from sankhara.sim.people import (
     support,
     wed,
 )
-from sankhara.sim.peoples import raid_chance
+from sankhara.sim.peoples import WALL_YEARS, raid_chance, wall_age
 from sankhara.sim.state import EventInstance
 from sankhara.sim.stations import ADULT_AGE
 from sankhara.sim.world import camp_tiles, is_watery
@@ -772,6 +772,117 @@ def _trade_offer(state, char, rng):
     )
 
 
+def _asks_loan(state, char, rng):
+    """Someone of another family whose hearth is bare asks to borrow from you."""
+    poor = [c for c in _others_near(state, char) if c.means.get("food") < BARE_HEARTH]
+    if not poor or char.means.get("food") < 1.5 * LOAN:
+        return None
+    who = rng.choice(poor)
+    return EventInstance(
+        "asks_loan",
+        f"{who.full_name} asks to borrow food from you until the harvests turn.",
+        target_id=who.id,
+        data={"family": who.family_name},
+    )
+
+
+def _owed_to(state, char):
+    """Debts owed to this character that have fallen due; debts of the dead are gone."""
+    nation = state.nation
+    nation.debts = [d for d in nation.debts if _alive(state, d["by"]) and _alive(state, d["to"])]
+    return [d for d in nation.debts if d["to"] == char.id and d["due"] <= state.year]
+
+
+def _alive(state, cid):
+    who = state.character(cid)
+    return who is not None and who.alive
+
+
+def _debt_due(state, char, rng):
+    debt = _owed_to(state, char)[0]
+    who = state.character(debt["by"])
+    data = {"family": who.family_name, "by": who.id}
+    if who.means.get("food") >= debt["food"] + BARE_HEARTH:
+        who.means.add({"food": -debt["food"]})
+        char.means.add({"food": debt["food"]})
+        state.nation.debts.remove(debt)
+        data["repaid"] = True
+        return EventInstance(
+            "debt_due",
+            f"{who.full_name} has given back what they owed you.",
+            target_id=who.id,
+            data=data,
+        )
+    return EventInstance(
+        "debt_due",
+        f"What {who.full_name} owes you has fallen due, and they cannot give it back.",
+        target_id=who.id,
+        data=data,
+    )
+
+
+GROUNDS = ("the ground by the stream", "the far grove", "the old hunting run", "the clay pit")
+
+
+def _false_mark(state, char, rng):
+    """A family wants its claim set down in marks, though the ground is another's."""
+    families = sorted({c.family_name for c in _others_near(state, char)})
+    if len(families) < 2:
+        return None
+    family, other = rng.sample(families, 2)
+    ground = rng.choice(GROUNDS)
+    return EventInstance(
+        "false_mark",
+        f"The {family} family ask you to set down in marks that {ground} is theirs, "
+        f"though it has always been the {other} family's.",
+        data={"family": family, "other": other},
+    )
+
+
+def _wall_crumbling(state, char, rng):
+    decides = say.has_say(state, char)
+    leader = state.leader
+    if decides:
+        text = "The wall is crumbling, and it will take every family's hands to mend it."
+    elif leader is not None:
+        text = f"{leader.full_name} has called every family to send hands to mend the wall."
+    else:
+        text = "The call has gone out for every family to send hands to mend the wall."
+    return EventInstance("wall_crumbling", text, data={"decides": decides})
+
+
+def _wall_resolve(state, event, taken, rng):
+    if not event.data.get("decides"):
+        state.nation.walls_mended = state.year  # the others mend it, whatever you do
+    return None
+
+
+def _shares_in(state, char, rng):
+    return EventInstance(
+        "shares_in",
+        "The families' shares have come in to your store, more than your own hearth needs.",
+    )
+
+
+def _share_due(state, char, rng):
+    leader = state.leader
+    if leader is None or leader.family_name == char.family_name:
+        return None
+    return EventInstance(
+        "share_due",
+        f"Your family's share is due at {leader.full_name}'s store.",
+        target_id=leader.id,
+        data={"family": leader.family_name},
+    )
+
+
+def _share_resolve(state, event, taken, rng):
+    leader = state.character(event.target_id)
+    if not taken and leader is not None:
+        leader.adjust_affinity(state.player_id, -0.05)
+    return None
+
+
 def _claim(kind, text):
     """A role matter about what is whose, with a known family of the player's camp."""
 
@@ -1084,6 +1195,60 @@ EVENTS = [
         _trade_offer,
         answers=("short_measure", "fair_trade"),
     ),
+    # what grows with later ideas
+    EventDef(
+        "asks_loan",
+        lambda s, c: 0.08 if "market" in s.nation.known else 0.0,
+        _asks_loan,
+        answers=("lend_food", "lend_for_more", "give_outright", "refuse_loan"),
+    ),
+    EventDef(
+        "debt_due",
+        lambda s, c: 1.0 if _owed_to(s, c) else 0.0,
+        _debt_due,
+        answers=("forgive_debt", "take_what_they_have", "work_off_debt", "wait_longer"),
+    ),
+    EventDef(
+        "false_mark",
+        lambda s, c: 0.12 if keeps_marks(s, c) else 0.0,
+        _false_mark,
+        answers=("mark_as_it_is", "mark_for_them", "mark_both_claims"),
+    ),
+    EventDef(
+        "wall_crumbling",
+        lambda s, c: 0.2 if wall_age(s) > WALL_YEARS * 0.8 else 0.0,
+        _wall_crumbling,
+        _wall_resolve,
+        answers=(
+            "call_levy",
+            "levy_spare_kin",
+            "ask_willing",
+            "work_wall",
+            "send_food_for_wall",
+            "shirk_wall",
+        ),
+        expects=("call_levy", "levy_spare_kin", "ask_willing", "work_wall", "send_food_for_wall"),
+        penalty=0.03,
+    ),
+    EventDef(
+        "shares_in",
+        lambda s, c: 0.15 if leads_with_shares(s, c) else 0.0,
+        _shares_in,
+        answers=("shares_to_stores", "keep_shares", "shares_to_needy"),
+    ),
+    EventDef(
+        "share_due",
+        lambda s, c: (
+            0.1
+            if s.nation.known.get("tribute") == "leaders_share" and c.station != "leader"
+            else 0.0
+        ),
+        _share_due,
+        _share_resolve,
+        answers=("pay_share", "hide_share"),
+        expects=("pay_share",),
+        penalty=0.02,
+    ),
     EventDef(
         "unguarded",
         lambda s, c: 0.05,
@@ -1260,6 +1425,8 @@ def offer(state, char, event):
     event.penalty = d.penalty if event.expected else 0.0
     if event.kind == "divided" and event.target_id == char.id:
         event.answers = [a for a in event.answers if a != "back_rival"]  # not for yourself
+    if event.data.get("repaid"):
+        event.answers = []  # news, not a matter
     if event.kind == "could_lead" and "back_leader" in event.answers:
         event.data.setdefault("leader", state.leader.name)
     return event
