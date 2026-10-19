@@ -43,6 +43,7 @@ from sankhara.sim.people import (
     feels,
     grudge,
     grudges_of,
+    in_laws,
     leadership_year,
     make_leader,
     succeed,
@@ -121,6 +122,7 @@ def new_game(seed=None):
             s = Settlement(state.new_id(), place_name(state, culture, rng), col, row, 0.0)
             state.settlements[str(s.id)] = s
     for s in state.settlements.values():
+        s.tribe = home.id  # the first camps are one band, one folk
         s.population = max(50.0, START_FILL * capacity(state, s) * rng.uniform(0.9, 1.1))
     refresh_averages(state)
     nation.stores.set("hands", hands_available(state))
@@ -841,6 +843,7 @@ def _end_life(state, cause, lines):
             "age": player.age(state.year),
             "cause": cause,
             "settlement": (state.settlement(player.settlement_id) or state.seat).name,
+            "settlement_id": (state.settlement(player.settlement_id) or state.seat).id,
             "legacy": [e["text"] for e in state.legacy if player.full_name in e["names"]],
         }
     )
@@ -854,6 +857,7 @@ def _end_life(state, cause, lines):
 
 
 AROUND_YOU = 5
+STRONG_TIE = 0.3  # how strongly someone must feel about the player to be among their ties
 
 
 def around_you(state):
@@ -878,6 +882,41 @@ def around_you(state):
     near.sort(key=lambda c: (-abs(feels(state, c, player)), -c.means.get("regard")))
     out += near[: AROUND_YOU - len(out)]
     return [(c, feels(state, c, player)) for c in out]
+
+
+def ties_by_place(state):
+    """Where those the player's life turns on live: family, kin by marriage, whoever leads,
+    and anyone who feels strongly about them. Returns {settlement id: [(character, kind,
+    how they feel about the player)]}, kind being "family", "kin by marriage", "leader",
+    "close" or "against"."""
+    player = state.player
+    seen = {player.id}
+    out = {}
+
+    def add(c, kind):
+        if c.id not in seen and c.alive:
+            seen.add(c.id)
+            out.setdefault(c.settlement_id, []).append((c, kind, feels(state, c, player)))
+
+    for _, c in family_of(state, player):
+        add(c, "family")
+    for _, kin in in_laws(state, player):
+        for c in kin:
+            add(c, "kin by marriage")
+    if state.leader:
+        add(state.leader, "leader")
+    for c in state.living():
+        if c.age(state.year) >= ADULT_AGE:
+            feeling = feels(state, c, player)
+            if abs(feeling) >= STRONG_TIE:
+                add(c, "close" if feeling > 0 else "against")
+    return out
+
+
+def last_home(state):
+    """The camp the player's last life ended in, if there was one and it still stands."""
+    life = life_summary(state)
+    return state.settlement(life.get("settlement_id")) if life else None
 
 
 def ties(state, char):

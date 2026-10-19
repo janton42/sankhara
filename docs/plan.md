@@ -46,7 +46,7 @@ and not all be good.
 1. **The web of ideas as a graph** (built): nodes and edges, the known and those the
    people are close to (faint, with their hint); nothing beyond, so nothing is
    spoiled. Laid out by depth, so it shows how far along the people are.
-2. **The map as the main view of the people**: villages as places, tribes as
+2. **The map as the main view of the people** (built): villages as places, tribes as
    regions containing them, the nation as the whole; zooming out moves from the
    person to the people. Where your kin, allies and rivals live is drawn on it,
    and where your last life stood, so a new life can be placed against the old.

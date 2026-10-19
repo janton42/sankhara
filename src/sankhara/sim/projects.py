@@ -17,7 +17,7 @@ import math
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-from sankhara.sim import discoveries, tendencies
+from sankhara.sim import discoveries, tendencies, tribes
 from sankhara.sim.actions import Ctx, budget_for, effective_cost, heal
 from sankhara.sim.nation import WORK_CAPS, advance, capacity
 from sankhara.sim.state import Project, Settlement
@@ -145,7 +145,10 @@ def _new_camp_finish(ctx, project):
         plenty=source.plenty,
     )
     state.settlements[str(camp.id)] = camp
-    return f"Families from {source.name} made a new camp: {camp.name}."
+    folk = tribes.found(state, camp, source)
+    return f"Families from {source.name} made a new camp: {camp.name}." + (
+        f" {folk}" if folk else ""
+    )
 
 
 def _explore_finish(ctx, project):

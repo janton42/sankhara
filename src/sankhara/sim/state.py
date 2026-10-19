@@ -102,6 +102,8 @@ class Settlement:
     cohesion: float = 55.0
     plenty: float = 45.0
     food_balance: float = 0.0  # last year's surplus (+) or shortfall (-)
+    founded_from: int = 0  # the camp whose families made this one
+    tribe: int = 0  # the camp its tribe began in (see tribes.py)
 
 
 @dataclass
