@@ -11,7 +11,7 @@ of game functions.
 | `sankhara.world` | Map generation (`map_gen.py`) and hex-grid math (`hexgrid.py`). |
 | `sankhara.core` | `game_engine.generate_map(seed)` builds the terrain. |
 | `sankhara.entities` | Name generation per culture (`namer.py`). |
-| `sankhara.ui` | Kivy screens: menu, game view (with the chooser, "What we know" and the choice of a custom's form), between-lives screen; `theme.py` palette and widgets; `words.py` turns numbers into the words the player sees. |
+| `sankhara.ui` | Kivy screens: menu, game view (with the chooser, "What we know" and the choice of a custom's form), between-lives screen; `idea_graph.py` draws the web of ideas: the known and the stirring only, in columns by how deep each lies (`depth`), each column ordered by a few sweeps toward what it grew from, with only the nearest links drawn and a chosen idea's links lit; `theme.py` palette and widgets; `words.py` turns numbers into the words the player sees. |
 | `sankhara.constants` | `config.py`: map size, noise, biome thresholds and resources, culture groups. |
 | `sankhara.app` | `SankharaApp`: screen flow and autosave. |
 

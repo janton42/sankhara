@@ -16,7 +16,7 @@ What has been built, and what comes next. The design itself is in
   people to follow them, factions and a divided people, matches and marriages
   between known families, kin by marriage who ask for help and give it.
 
-## M4: choices that fit (next)
+## M4: choices that fit
 
 From the play-test notes: choices should match the role, grow with the society,
 and not all be good.
@@ -41,9 +41,9 @@ and not all be good.
    records (and false ones) with writing, levies of labour with walls, collecting
    (and skimming) tribute.
 
-## M5: seeing the people
+## M5: seeing the people (next)
 
-1. **The web of ideas as a graph**: nodes and edges, the known and those the
+1. **The web of ideas as a graph** (built): nodes and edges, the known and those the
    people are close to (faint, with their hint); nothing beyond, so nothing is
    spoiled. Laid out by depth, so it shows how far along the people are.
 2. **The map as the main view of the people**: villages as places, tribes as
