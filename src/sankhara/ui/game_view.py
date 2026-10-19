@@ -16,6 +16,7 @@ from sankhara.sim.people import family_of
 from sankhara.sim.peoples import relation_word
 from sankhara.sim.stations import ACTION_SLOTS, station_title
 from sankhara.sim.world import game_map
+from sankhara.ui.idea_graph import DOMAIN_COLORS, DOMAIN_WORDS, DOMAINS, IdeaGraph
 from sankhara.ui.screens.map_view import MapScreen
 from sankhara.ui.theme import (
     ACCENT,
@@ -162,24 +163,22 @@ class CharacterPanel(BoxLayout):
 
 
 class KnowledgePopup(Popup):
-    """What the people know, what is stirring, and who they have met."""
+    """What the people know and what is stirring, as a graph, and who they have met."""
 
     def __init__(self, state, **kwargs):
         nation = state.nation
-        widgets = [WrapLabel(text=heading("What the people know"))]
-        for did, form_id in nation.known.items():
-            d = discoveries.DISCOVERIES[did]
-            form = d.form(form_id)
-            title = f"[b]{d.name}[/b]" + (f": {form.name.lower()}" if form else "")
-            text = form.text if form else d.text
-            widgets.append(WrapLabel(text=f"{title}\n{muted(text)}", font_size=14))
-        stirring = discoveries.stirring(state)
-        widgets.append(WrapLabel(text="\n" + heading("Stirring among the people")))
-        if not stirring:
-            widgets.append(WrapLabel(text=muted("Nothing new, for now.")))
-        for d in stirring:
-            word = discoveries.progress_word(discoveries.progress(state, d))
-            widgets.append(WrapLabel(text=f"{d.hint}\n{muted(word)}", font_size=14))
+        self.state = state
+        self.detail = WrapLabel(text=muted("Choose an idea to see more of it."), font_size=14)
+        self.graph = IdeaGraph(state, on_select=self._show)
+        graph_scroll = ScrollView(do_scroll_x=True, do_scroll_y=True, size_hint_y=0.74)
+        graph_scroll.add_widget(self.graph)
+        legend = "   ".join(
+            f"[color={_hex(DOMAIN_COLORS[d])}]{DOMAIN_WORDS[d]}[/color]" for d in DOMAINS
+        )
+        widgets = [
+            WrapLabel(text=legend + muted("   ·   faint: stirring among the people"), font_size=13),
+            self.detail,
+        ]
         met = [n for n in state.neighbours.values() if n.met]
         widgets.append(WrapLabel(text="\n" + heading("Other peoples")))
         if not met:
@@ -193,13 +192,23 @@ class KnowledgePopup(Popup):
                 )
             )
         content = BoxLayout(orientation="vertical", spacing=8, padding=[10, 8])
-        content.add_widget(_scrolling(widgets))
+        content.add_widget(WrapLabel(text=heading("What the people know")))
+        content.add_widget(graph_scroll)
+        # the newest ideas first, when they do not all fit
+        graph_scroll.bind(
+            width=lambda *_: setattr(
+                graph_scroll, "scroll_x", 1 if self.graph.width > graph_scroll.width else 0
+            )
+        )
+        rest = _scrolling(widgets)
+        rest.size_hint_y = 0.26
+        content.add_widget(rest)
         close = ThemedButton(text="Close", size_hint_y=None, height=44)
         content.add_widget(close)
         super().__init__(
             title=f"The {nation.name}",
             content=content,
-            size_hint=(0.6, 0.86),
+            size_hint=(0.9, 0.92),
             title_color=ACCENT,
             background="",
             background_color=PANEL,
@@ -207,6 +216,27 @@ class KnowledgePopup(Popup):
             **kwargs,
         )
         close.bind(on_release=lambda *_: self.dismiss())
+
+    def _show(self, node):
+        d = discoveries.DISCOVERIES[node.id]
+        if node.known:
+            form = d.form(self.state.nation.known.get(d.id, ""))
+            title = f"[b]{d.name}[/b]" + (f": {form.name.lower()}" if form else "")
+            text = form.text if form else d.text
+            grew = [discoveries.DISCOVERIES[p].name for p in node.parents]
+            after = muted(f"\nGrew from {_listed(grew).lower()}.") if grew else ""
+            self.detail.text = f"{title}\n{muted(text)}{after}"
+        else:
+            word = discoveries.progress_word(node.progress)
+            self.detail.text = f"{d.hint}\n{muted(word)}"
+
+
+def _listed(names):
+    return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+
+
+def _hex(color):
+    return "".join(f"{round(c * 255):02x}" for c in color[:3])
 
 
 class FormChoicePopup(Popup):

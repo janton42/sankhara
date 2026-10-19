@@ -159,10 +159,29 @@ def test_what_we_know_lists_knowledge_and_peoples():
     state = view.state
     n = next(iter(state.neighbours.values()))
     n.met = True
-    text = all_text(KnowledgePopup(state).content)
+    popup = KnowledgePopup(state)
+    text = all_text(popup.content)
     assert "Keeping fire" in text
-    assert discoveries.stirring(state)[0].hint in text
     assert n.name in text
+    near = discoveries.stirring(state)[0]
+    assert discoveries.QUESTIONS[near.id] in text
+    popup.graph.select(near.id)
+    assert near.hint in popup.detail.text
+
+
+def test_the_idea_graph_shows_only_the_known_and_the_stirring():
+    from sankhara.ui import idea_graph
+
+    view, _ = make_view()
+    state = view.state
+    nodes = idea_graph.layout(state)
+    stirring = {d.id for d in discoveries.stirring(state)}
+    assert set(nodes) == set(state.nation.known) | stirring
+    for n in nodes.values():
+        assert n.known == (n.id in state.nation.known)
+        assert all(nodes[p].depth < n.depth for p in n.links) and set(n.links) <= set(n.parents)
+    hidden = next(d for d in discoveries.DISCOVERY_LIST if d.id not in nodes)
+    assert hidden.name not in all_text(idea_graph.IdeaGraph(state))
 
 
 def test_descriptions_keep_the_game_s_secrets():

@@ -11,9 +11,9 @@ lineage). Any role can shape the people through the people's works
 are settled. Buddhist ideas (karma, rebirth, saṅkhāra) are modelled but
 never named in-game, nor in the README, About text or other descriptions, and
 nothing says there is no winning. Design: `docs/concepts.md` (check it for new
-notes every session). Plan: `docs/plan.md` (M1-M3 done; next M4 = choices that fit
-the role and scale, including harm; then M5 = seeing the people: idea graph, map
-and a graph centred on the player).
+notes every session). Plan: `docs/plan.md` (M1-M4 built, M4's role-and-scale part
+only begun; now M5 = seeing the people: idea graph, map and a graph centred on the
+player).
 
 ## Branches
 
