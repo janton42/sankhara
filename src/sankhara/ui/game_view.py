@@ -12,10 +12,11 @@ from kivy.uix.widget import Widget
 
 from sankhara.sim import discoveries, game, projects, tribes
 from sankhara.sim.nation import KINDS
-from sankhara.sim.people import family_of
+from sankhara.sim.people import family_of, feels
 from sankhara.sim.peoples import relation_word
 from sankhara.sim.stations import ACTION_SLOTS, station_title
 from sankhara.sim.world import game_map
+from sankhara.ui.ego_graph import EgoGraph
 from sankhara.ui.idea_graph import DOMAIN_COLORS, DOMAIN_WORDS, DOMAINS, IdeaGraph
 from sankhara.ui.screens.map_view import MapScreen
 from sankhara.ui.theme import (
@@ -88,7 +89,7 @@ def _scrolling(widgets):
 
 
 class CharacterPanel(BoxLayout):
-    def __init__(self, **kwargs):
+    def __init__(self, on_person=None, on_place=None, **kwargs):
         super().__init__(orientation="vertical", spacing=4, padding=[14, 12], **kwargs)
         fill_background(self, PANEL)
         self.state = None
@@ -97,8 +98,11 @@ class CharacterPanel(BoxLayout):
         self.who_label = WrapLabel(text="")
         self.add_widget(self.who_label)
         self.means_label = _section(self, "Means")
-        self.family_label = _section(self, "Family")
-        self.around_label = _section(self, "Around you")
+        self.add_widget(WrapLabel(text=heading("Those around you")))
+        self.graph = EgoGraph(on_person=on_person, on_place=on_place, size_hint_y=None, height=270)
+        self.add_widget(self.graph)
+        self.tie_label = WrapLabel(text="", font_size=13)
+        self.add_widget(self.tie_label)
         self.people_label = _section(self, "Your people")
         self.knowledge_button = ThemedButton(text="What we know", size_hint_y=None, height=36)
         self.knowledge_button.bind(on_release=lambda *_: self.show_knowledge())
@@ -121,22 +125,15 @@ class CharacterPanel(BoxLayout):
             means = f"Held in common  {budget_text(nation.stores, nation)}\n{means}"
         self.means_label.text = means
 
-        family = family_of(state, p)
-        if family:
-            self.family_label.text = "\n".join(
-                f"{muted(rel)}  {c.full_name} ({c.age(state.year)})" for rel, c in family
+        self.graph.show(state)
+        chosen = state.character(self.graph.selected_person)
+        if chosen is None or not chosen.alive:
+            self.graph.selected_person = None
+            self.tie_label.text = muted(
+                "Click someone to see their ties on the map, or a camp to find it there."
             )
         else:
-            self.family_label.text = muted("You have no living family.")
-        around = game.around_you(state)
-        if around:
-            self.around_label.text = "\n".join(
-                f"{c.full_name}, {station_title(c, nation).lower()}  ·  "
-                + muted(", ".join([feeling_word(feeling), *game.ties(state, c)]))
-                for c, feeling in around
-            )
-        else:
-            self.around_label.text = muted("You keep to yourself.")
+            self.tie_label.text = describe(state, chosen)
 
         leader = state.leader
         if leader and not leader.is_player:
@@ -232,6 +229,31 @@ class KnowledgePopup(Popup):
 
 
 TIE_WORDS = {"kin by marriage": "kin by marriage", "leader": "who leads the people"}
+
+
+def describe(state, char):
+    """Someone in the player's circle, in words: who they are and how they stand."""
+    if char.is_player:
+        return f"[b]You[/b]  ·  {muted('the lines on the map run to those your life turns on')}"
+    camp = state.settlement(char.settlement_id)
+    words = [_relation(state, char) or feeling_word(feels(state, char, state.player))]
+    words += [w for w in game.ties(state, char) if w not in words]
+    return (
+        f"[b]{char.full_name}[/b], {station_title(char, state.nation).lower()}, "
+        f"aged {char.age(state.year)}, of {camp.name if camp else 'no camp'}\n"
+        + muted(", ".join(words))
+    )
+
+
+def _relation(state, char):
+    for rel, c in family_of(state, state.player):
+        if c is char:
+            return rel.lower()
+    for people in game.ties_by_place(state).values():
+        for c, kind, _ in people:
+            if c is char:
+                return TIE_WORDS.get(kind, "")
+    return ""
 
 
 def _yours_here(state, camp):
@@ -539,6 +561,19 @@ class YearPanel(BoxLayout):
             ChooserPopup(self.state, slot, on_pick=lambda: self.refresh(self.state)).open()
 
 
+def _map_ties(state, char=None):
+    """The ties to draw on the map, as ((col, row), mean warmth, how many) per camp, and
+    the camp they are drawn from when they are someone else's."""
+    out = []
+    for sid, people in game.ties_by_place(state, char).items():
+        camp = state.settlement(sid)
+        if camp:
+            warmth = sum(f for _, _, f in people) / len(people)
+            out.append(((camp.col, camp.row), warmth, len(people)))
+    home = state.settlement(char.settlement_id) if char else None
+    return out, (home.col, home.row) if home else None
+
+
 def works_text(state):
     """The people's works under way: what, who leads, how far along. Yours are marked."""
     works = [p for p in state.projects.values() if p.common]
@@ -583,7 +618,10 @@ class GameView(BoxLayout):
         self.elapsed = 0.0
         self.year_length = PACES[self.pace][1]
         self.resume_after_life = False
-        self.character = CharacterPanel(size_hint_x=0.27)
+        self.focus = None  # whose ties the map shows, if not the player's
+        self.character = CharacterPanel(
+            on_person=self.on_person, on_place=self.on_place, size_hint_x=0.27
+        )
         self.add_widget(self.character)
         centre = BoxLayout(orientation="vertical", size_hint_x=0.43, padding=[4, 8], spacing=4)
         self.map_view = MapScreen(on_tile_selected_callback=self.on_tile_selected)
@@ -625,12 +663,10 @@ class GameView(BoxLayout):
             (tribes.tribe_name(state, tid), [(c.col, c.row) for c in camps])
             for tid, camps in sorted(tribes.tribes(state).items())
         ]
-        ties = []
-        for sid, people in game.ties_by_place(state).items():
-            camp = state.settlement(sid)
-            if camp:
-                warmth = sum(f for _, _, f in people) / len(people)
-                ties.append(((camp.col, camp.row), warmth, len(people)))
+        focus = state.character(self.focus)
+        if focus is None or not focus.alive or focus.is_player:
+            focus = self.focus = None
+        ties, origin = _map_ties(state, focus)
         before = game.last_home(state)
         self.map_view.set_realm(
             state.nation.territory,
@@ -641,6 +677,7 @@ class GameView(BoxLayout):
             ties=ties,
             last_home=(before.col, before.row) if before else None,
             names={(s.col, s.row): s.name for s in state.settlements.values()},
+            ties_from=origin,
         )
         self.character.refresh(state)
         self.year.refresh(state)
@@ -666,10 +703,26 @@ class GameView(BoxLayout):
         self.on_saved(self.state)
         self.refresh()
 
+    def on_person(self, cid):
+        """Someone chosen in the circle: the map shows their ties."""
+        state = self.state
+        char = state.character(cid)
+        self.focus = None if char is None or char.is_player else cid
+        ties, origin = _map_ties(state, state.character(self.focus))
+        self.map_view.show_ties(ties, origin)
+        self.character.tie_label.text = describe(state, char) if char else ""
+
+    def on_place(self, sid):
+        """A camp chosen in the circle: the map comes to it."""
+        camp = self.state.settlement(sid)
+        if camp:
+            self.map_view.focus((camp.col, camp.row))
+
     def on_tile_selected(self, tile):
         state = self.state
         cell = (tile["q"], tile["r"])
         here = next((s for s in state.settlements.values() if (s.col, s.row) == cell), None)
+        self.character.graph.select_place(here.id if here else None)
         if here:
             works = ", ".join(
                 WORK_NAMES.get(k, k) + (f" ×{v}" if v > 1 else "")

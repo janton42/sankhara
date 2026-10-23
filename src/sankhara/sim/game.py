@@ -884,32 +884,36 @@ def around_you(state):
     return [(c, feels(state, c, player)) for c in out]
 
 
-def ties_by_place(state):
-    """Where those the player's life turns on live: family, kin by marriage, whoever leads,
-    and anyone who feels strongly about them. Returns {settlement id: [(character, kind,
-    how they feel about the player)]}, kind being "family", "kin by marriage", "leader",
-    "close" or "against"."""
-    player = state.player
-    seen = {player.id}
+def ties_by_place(state, char=None, near=False):
+    """Where those someone's life turns on live (the player's, unless another is given):
+    family, kin by marriage, whoever leads, and anyone who feels strongly about them; with
+    `near`, also those around the player they have most to do with. Returns {settlement id:
+    [(character, kind, how they feel about them)]}, kind being "family", "kin by marriage",
+    "leader", "close", "against" or "near"."""
+    char = char or state.player
+    seen = {char.id}
     out = {}
 
     def add(c, kind):
         if c.id not in seen and c.alive:
             seen.add(c.id)
-            out.setdefault(c.settlement_id, []).append((c, kind, feels(state, c, player)))
+            out.setdefault(c.settlement_id, []).append((c, kind, feels(state, c, char)))
 
-    for _, c in family_of(state, player):
+    for _, c in family_of(state, char):
         add(c, "family")
-    for _, kin in in_laws(state, player):
+    for _, kin in in_laws(state, char):
         for c in kin:
             add(c, "kin by marriage")
     if state.leader:
         add(state.leader, "leader")
     for c in state.living():
         if c.age(state.year) >= ADULT_AGE:
-            feeling = feels(state, c, player)
+            feeling = feels(state, c, char)
             if abs(feeling) >= STRONG_TIE:
                 add(c, "close" if feeling > 0 else "against")
+    if near and char.is_player:
+        for c, _ in around_you(state):
+            add(c, "near")
     return out
 
 

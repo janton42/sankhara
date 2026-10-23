@@ -22,6 +22,7 @@ MAX_ZOOM = 4.0
 ZOOM_STEP = 1.25
 NAMES_AT = 30  # hex size (pixels) from which camps are named rather than tribes
 DRAG = 6  # pixels a touch may move and still count as a click
+FOCUS_ZOOM = 2.5  # how close the map comes to a place chosen elsewhere
 
 
 class MapScreen(StencilView):
@@ -48,6 +49,7 @@ class MapScreen(StencilView):
         self.tribes = []  # (name, [(col, row) of its camps])
         self.tribe_tiles = {}  # (col, row) -> index into self.tribes
         self.ties = []  # ((col, row), warmth -1..1, how many)
+        self.ties_from = None  # (col, row) the ties are drawn from, if not home
         self.last_home = None  # (col, row)
         self.names = {}  # (col, row) -> camp name
         self.hex_size = 0
@@ -78,6 +80,7 @@ class MapScreen(StencilView):
         ties=(),
         last_home=None,
         names=None,
+        ties_from=None,
     ):
         self.territory = {tuple(t) for t in territory}
         self.settlements = settlements
@@ -86,11 +89,28 @@ class MapScreen(StencilView):
         self.tribes = list(tribes)
         self.tribe_tiles = _nearest_tribe(self.territory, self.tribes)
         self.ties = list(ties)
+        self.ties_from = tuple(ties_from) if ties_from else None
         self.last_home = last_home
         self.names = dict(names or {})
         if home is not None and self.map_data:
             self.home_tile = self.map_data[home[0]][home[1]]
         self.draw_map()
+
+    def show_ties(self, ties, origin=None):
+        """Draw these ties instead, from `origin` (someone else's camp) or from home."""
+        self.ties = list(ties)
+        self.ties_from = tuple(origin) if origin else None
+        self.draw_map()
+
+    def focus(self, cell, zoom=FOCUS_ZOOM):
+        """Come close to a place, centre it and select it."""
+        self.zoom = max(self.zoom, zoom)
+        self._layout()
+        x, y = hexgrid.tile_center(*cell, self.hex_size)
+        map_w, map_h = hexgrid.map_pixel_size(MAP_WIDTH, MAP_HEIGHT, self.hex_size)
+        self.pan = (map_w / 2 - x, y - map_h / 2)
+        self._clamp_pan()
+        self.on_tile_selected(self.map_data[cell[0]][cell[1]])
 
     # --- where things are ---------------------------------------------------------
 
@@ -214,11 +234,15 @@ class MapScreen(StencilView):
             self._draw_names(size)
 
     def _draw_ties(self, size):
-        """Lines from home to where the player's ties live; ties at home ring it."""
-        if not self.home_tile:
+        """Lines from home (or whoever was chosen) to where their ties live; ties at home ring
+        it."""
+        if self.ties_from:
+            home = self.ties_from
+        elif self.home_tile:
+            home = (self.home_tile["q"], self.home_tile["r"])
+        else:
             return
-        hx, hy = self.tile_screen_center(self.home_tile)
-        home = (self.home_tile["q"], self.home_tile["r"])
+        hx, hy = self.cell_center(*home)
         for cell, warmth, count in self.ties:
             color = _blend(MUTED, GOOD if warmth >= 0 else BAD, 1 - min(1.0, abs(warmth) * 1.5))
             Color(*color[:3], 0.9)

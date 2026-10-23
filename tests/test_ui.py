@@ -1,5 +1,7 @@
 """Headless checks of the game UI wired to a real simulation."""
 
+from types import SimpleNamespace
+
 import pytest
 from kivy.core.window import Window
 from kivy.uix.label import Label
@@ -190,14 +192,44 @@ def test_descriptions_keep_the_game_s_secrets():
         assert word not in text
 
 
-def test_those_around_you_are_shown_with_how_they_feel():
+def test_those_around_you_are_drawn_and_chosen_with_how_they_feel():
     view, _ = make_view()
     state = view.state
     who, _ = game.around_you(state)[0]
     who.adjust_affinity(state.player_id, 0.9)
     view.refresh()
-    text = view.character.around_label.text
+    graph = view.character.graph
+    graph.size = (320, 270)
+    shown = {p.id: p for p in graph.people()}
+    assert state.player_id in shown and who.id in shown
+    p = shown[who.id]
+    graph.on_touch_down(SimpleNamespace(pos=(graph.x + p.x, graph.y + p.y)))
+    text = view.character.tie_label.text
     assert who.full_name in text and "a friend to you" in text
+    assert graph.selected_person == who.id
+
+
+def test_choosing_someone_shows_their_ties_and_a_camp_brings_the_map_to_it():
+    view, _ = make_view()
+    state = view.state
+    m = view.map_view
+    m.size = (600, 450)
+    home = state.player.settlement_id
+    camp = next(s for s in state.settlements.values() if s.id != home)
+    other = next(c for c in state.living() if not c.is_player)
+    other.settlement_id = camp.id
+    friend = next(c for c in state.living() if c not in (other, state.player))
+    friend.adjust_affinity(other.id, 0.9)
+    view.on_person(other.id)
+    assert m.ties_from == (camp.col, camp.row)
+    view.refresh()
+    assert m.ties_from == (camp.col, camp.row)
+    view.on_person(state.player_id)
+    assert m.ties_from is None
+    view.on_place(camp.id)
+    assert m.zoom > 1 and m.selected_tile is m.map_data[camp.col][camp.row]
+    assert view.character.graph.selected_place == camp.id
+    assert camp.name in view.tile_label.text
 
 
 def test_words():

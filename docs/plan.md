@@ -50,7 +50,7 @@ and not all be good.
    regions containing them, the nation as the whole; zooming out moves from the
    person to the people. Where your kin, allies and rivals live is drawn on it,
    and where your last life stood, so a new life can be placed against the old.
-3. **A small graph centred on you**: close family and the few with strong ties
+3. **A small graph centred on you** (built): close family and the few with strong ties
    (friends, rivals, enemies), village and tribe as outlines around them, how
    each feels shown by line and distance rather than words or numbers. Choosing
    a person on the map shows their ties; choosing a place in the graph goes to it
