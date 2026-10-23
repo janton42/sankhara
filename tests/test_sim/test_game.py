@@ -442,21 +442,39 @@ def test_walls_and_warriors_make_raids_rarer(state):
     assert raid_chance(state, n) < before * 0.5
 
 
-def test_villages_grow_into_towns(state):
+def test_only_the_largest_villages_grow_into_towns(state):
     from sankhara.sim import nation
 
     discoveries.learn(state, "settling")
     nation.economy_year(state)
     assert all(s.kind == "village" for s in state.settlements.values())
-    big = state.seat
-    big.population = nation.TOWN_SIZE + 100
+    camps = sorted(state.settlements.values(), key=lambda s: s.id)
+    big, near, small = camps[0], camps[1], camps[2]
+    for s in state.settlements.values():
+        s.population = 300
+    big.population = nation.TOWN_SIZE * 2
     nation.economy_year(state)
     assert big.kind == "village"  # the people have no notion of a town yet
     discoveries.learn(state, "towns")
-    big.population = nation.TOWN_SIZE + 100
-    nation.economy_year(state)
-    assert big.kind == "town"
-    assert any(s.kind == "village" for s in state.settlements.values())
+    big.population = nation.TOWN_SIZE * 2
+    near.population = nation.TOWN_SIZE * 2 * nation.TOWN_SHARE + 50
+    small.population = nation.TOWN_SIZE * 2 * nation.TOWN_SHARE - 200  # big, but not enough
+    notes = nation.settle_kinds(state, discoveries.effects(state))
+    assert big.kind == near.kind == "town" and small.kind == "village"
+    assert f"{near.name} has grown into a town." in notes
+    near.population = nation.TOWN_FALLS - 1
+    nation.settle_kinds(state, discoveries.effects(state))
+    assert near.kind == "village" and big.kind == "town"
+
+
+def test_the_largest_village_is_a_town_as_soon_as_towns_are_known(state):
+    from sankhara.sim import nation
+
+    discoveries.learn(state, "settling")
+    discoveries.learn(state, "towns")
+    nation.settle_kinds(state, discoveries.effects(state))
+    largest = max(state.settlements.values(), key=lambda s: s.population)
+    assert [s for s in state.settlements.values() if s.kind == "town"] == [largest]
 
 
 # --- how the people decide ----------------------------------------------------------
