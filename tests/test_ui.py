@@ -234,3 +234,24 @@ def test_speaking_for_a_custom_when_not_deciding():
     assert "Speak for" in text
     view.choice_popup._choose("feasts")
     assert "gifts" in state.nation.known
+
+
+def test_the_map_shows_tribes_ties_and_comes_closer():
+    view, _ = make_view()
+    state = view.state
+    m = view.map_view
+    m.size = (600, 450)
+    m.draw_map()
+    assert [name for name, _ in m.tribes] == [f"the {state.seat.name} folk"]
+    home = state.settlement(state.player.settlement_id)
+    assert m.names[(home.col, home.row)] == home.name
+    m.on_tile_selected(m.map_data[home.col][home.row])
+    assert f"the {state.seat.name} folk" in view.tile_label.text
+    assert "You live here." in view.tile_label.text
+    x, y = m.tile_screen_center(m.selected_tile)
+    before = m.hex_size
+    m.zoom_at(x, y, 2)
+    assert m.hex_size == pytest.approx(before * 2)
+    assert m.tile_screen_center(m.selected_tile) == pytest.approx((x, y), abs=1)
+    m.zoom_at(x, y, 0.1)
+    assert m.zoom == 1.0 and m.pan == (0.0, 0.0)

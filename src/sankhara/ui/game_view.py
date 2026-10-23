@@ -10,7 +10,7 @@ from kivy.uix.popup import Popup
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.widget import Widget
 
-from sankhara.sim import discoveries, game, projects
+from sankhara.sim import discoveries, game, projects, tribes
 from sankhara.sim.nation import KINDS
 from sankhara.sim.people import family_of
 from sankhara.sim.peoples import relation_word
@@ -229,6 +229,29 @@ class KnowledgePopup(Popup):
         else:
             word = discoveries.progress_word(node.progress)
             self.detail.text = f"{d.hint}\n{muted(word)}"
+
+
+TIE_WORDS = {"kin by marriage": "kin by marriage", "leader": "who leads the people"}
+
+
+def _yours_here(state, camp):
+    """Who of the player's ties lives in this camp, and whether their last life ended here."""
+    player = state.player
+    relation = {c.id: rel.lower() for rel, c in family_of(state, player)}
+    people = game.ties_by_place(state).get(camp.id, [])
+    words = [
+        f"{c.name} ({relation.get(c.id) or TIE_WORDS.get(kind) or feeling_word(feeling)})"
+        for c, kind, feeling in people
+    ]
+    out = ""
+    if camp.id == player.settlement_id:
+        out += "\n" + muted("You live here.")
+    if words:
+        out += "\n" + muted("Here: " + ", ".join(words))
+    before = game.last_home(state)
+    if before is not None and before.id == camp.id:
+        out += "\n" + muted("Your last life ended here.")
+    return out
 
 
 def _listed(names):
@@ -598,8 +621,26 @@ class GameView(BoxLayout):
         others = [
             (n.territory, (n.col, n.row), n.population) for n in state.neighbours.values() if n.met
         ]
+        folk = [
+            (tribes.tribe_name(state, tid), [(c.col, c.row) for c in camps])
+            for tid, camps in sorted(tribes.tribes(state).items())
+        ]
+        ties = []
+        for sid, people in game.ties_by_place(state).items():
+            camp = state.settlement(sid)
+            if camp:
+                warmth = sum(f for _, _, f in people) / len(people)
+                ties.append(((camp.col, camp.row), warmth, len(people)))
+        before = game.last_home(state)
         self.map_view.set_realm(
-            state.nation.territory, settlements, home=(home.col, home.row), others=others
+            state.nation.territory,
+            settlements,
+            home=(home.col, home.row),
+            others=others,
+            tribes=folk,
+            ties=ties,
+            last_home=(before.col, before.row) if before else None,
+            names={(s.col, s.row): s.name for s in state.settlements.values()},
         )
         self.character.refresh(state)
         self.year.refresh(state)
@@ -607,7 +648,9 @@ class GameView(BoxLayout):
         if self.map_view.selected_tile:
             self.on_tile_selected(self.map_view.selected_tile)
         else:
-            self.tile_label.text = muted("Click the map to look at a place.")
+            self.tile_label.text = muted(
+                "Click the map to look at a place; scroll to come closer, drag to move."
+            )
         if state.pending_choice and not state.life_over:
             self.ask_form()
 
@@ -634,12 +677,14 @@ class GameView(BoxLayout):
                 if v
             )
             kind = "where the leader lives" if here.is_seat else f"a {here.kind}"
+            folk = tribes.tribe_name(state, tribes.tribe_of(state, here))
             self.tile_label.text = (
-                f"[b]{here.name}[/b], {kind}  ·  {tile['biome']}\n"
+                f"[b]{here.name}[/b], {kind} of {folk}  ·  {tile['biome']}\n"
                 f"{population_text(here.population)} people  ·  food: "
                 f"{food_word(here.food_balance, here.population)}  ·  "
                 f"{cohesion_word(here.cohesion)}, {plenty_word(here.plenty)}"
                 + (f"\n{muted('They have ' + works)}" if works else "")
+                + _yours_here(state, here)
             )
             return
         if list(cell) in state.nation.territory:

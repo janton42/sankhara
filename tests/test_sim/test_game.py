@@ -1544,3 +1544,61 @@ def test_where_the_leader_takes_a_share_it_can_be_kept_or_hidden(state):
     assert due.answers == ["pay_share", "hide_share"] and due.expected
     events.resolve_events(state, state.plan)
     assert leader.feels(me.id) < 0
+
+
+def _new_camp(state, col, row, source):
+    from sankhara.sim import tribes
+    from sankhara.sim.state import Settlement
+
+    camp = Settlement(state.new_id(), f"Camp{col}_{row}", col, row, 50.0)
+    state.settlements[str(camp.id)] = camp
+    return camp, tribes.found(state, camp, source)
+
+
+def test_camps_founded_from_one_another_make_up_tribes(state):
+    from sankhara.sim import tribes
+
+    first = tribes.tribes(state)
+    assert len(first) == 1  # the band begins as one folk
+    seat = state.seat
+    near, line = _new_camp(state, seat.col, seat.row + 1, seat)
+    assert tribes.tribe_of(state, near) == tribes.tribe_of(state, seat) and not line
+    assert near.founded_from == seat.id
+    far, line = _new_camp(state, (seat.col + 8) % 16, (seat.row + 6) % 12, seat)
+    assert tribes.tribe_of(state, far) == far.id and far.name in line
+    assert tribes.tribe_name(state, far.id) == f"the {far.name} folk"
+    # a later camp near the new folk joins it rather than beginning another
+    next_to, _ = _new_camp(state, far.col, far.row + 1 if far.row < 11 else far.row - 1, seat)
+    assert tribes.tribe_of(state, next_to) == far.id
+
+
+def test_a_tribe_with_no_room_left_sends_new_camps_off_on_their_own(state, monkeypatch):
+    from sankhara.sim import tribes
+
+    monkeypatch.setattr(tribes, "TRIBE_CAMPS", len(state.settlements))
+    seat = state.seat
+    camp, line = _new_camp(state, seat.col, seat.row + 1, seat)
+    assert tribes.tribe_of(state, camp) == camp.id and line
+
+
+def test_ties_are_placed_where_people_live(state):
+    me = state.player
+    kin = [c for _, c in people.family_of(state, me)]
+    foe = _other_adult(state, me, *kin)
+    foe.adjust_affinity(me.id, -0.8)
+    placed = game.ties_by_place(state)
+    found = {c.id: kind for ties in placed.values() for c, kind, _ in ties}
+    assert all(found.get(c.id) == "family" for c in kin)
+    assert found[foe.id] == "against"
+    assert foe in [c for c, _, _ in placed[foe.settlement_id]]
+    assert me.id not in found
+
+
+def test_a_new_life_remembers_where_the_last_one_ended(state):
+    assert game.last_home(state) is None
+    old = state.player
+    home = state.settlement(old.settlement_id)
+    old.death_age = old.age(state.year)
+    game.end_year(state)
+    game.begin_next_life(state)
+    assert game.last_home(state) is home
