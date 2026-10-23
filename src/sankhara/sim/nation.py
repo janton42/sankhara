@@ -26,10 +26,40 @@ WORK_CAPS = {
     "paths": 1,
 }
 GROWTH = 0.02
-TOWN_SIZE = 600  # a village this big becomes a town, once the people know what that is
+# Once the people know what a town is, the largest village is one; others become towns
+# only when they are both big and near the largest in size, and fall back to villages
+# when they dwindle.
+TOWN_SIZE = 1500
+TOWN_SHARE = 0.6  # of the largest settlement's people
+TOWN_FALLS = 900  # a town this small (and not the largest) is a village again
 KINDS = ("camp", "village", "town")
 
 SEED_KEPT_HARVEST = 1.2  # a harvest after seed was kept back for planting
+
+
+def settle_kinds(state, fx):
+    """Camps become villages once the people settle, and the largest villages towns once
+    they know what a town is. Returns news of towns that rise or dwindle."""
+    notes = []
+    places = list(state.settlements.values())
+    if fx.get("settled"):
+        for s in places:
+            if s.kind == "camp":
+                s.kind = "village"
+    if not fx.get("towns") or not places:
+        return notes
+    largest = max(places, key=lambda s: s.population)
+    for s in places:
+        if s.kind == "village" and (
+            s is largest
+            or (s.population >= TOWN_SIZE and s.population >= TOWN_SHARE * largest.population)
+        ):
+            s.kind = "town"
+            notes.append(f"{s.name} has grown into a town.")
+        elif s.kind == "town" and s is not largest and s.population < TOWN_FALLS:
+            s.kind = "village"
+            notes.append(f"{s.name} has dwindled to a village.")
+    return notes
 
 
 def clamp(x, lo=0.0, hi=100.0):
@@ -96,11 +126,8 @@ def economy_year(state):
         3 if state.seat.works.get("paths") else 0
     )  # camps that can reach each other hold together
 
+    notes += settle_kinds(state, fx)
     for s in state.settlements.values():
-        if fx.get("settled") and s.kind == "camp":
-            s.kind = "village"
-        if fx.get("towns") and s.kind == "village" and s.population >= TOWN_SIZE:
-            s.kind = "town"
         cap = capacity(state, s, fx)
         ratio = s.population / cap
         season = mods.get("harvest", 1.0) * mods.get(f"harvest:{s.id}", 1.0)
