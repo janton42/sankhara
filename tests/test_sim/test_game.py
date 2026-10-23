@@ -1594,6 +1594,22 @@ def test_ties_are_placed_where_people_live(state):
     assert me.id not in found
 
 
+def test_anyones_ties_can_be_found_and_the_players_include_those_near(state):
+    me = state.player
+    near = {c.id for c, _ in game.around_you(state)}
+    found = {
+        c.id: kind for ties in game.ties_by_place(state, near=True).values() for c, kind, _ in ties
+    }
+    assert near <= set(found)
+    other = _other_adult(state, me)
+    friend = _other_adult(state, me, other)
+    friend.adjust_affinity(other.id, 0.9)
+    theirs = game.ties_by_place(state, other)
+    found = {c.id: kind for ties in theirs.values() for c, kind, _ in ties}
+    assert found[friend.id] == "close"
+    assert other.id not in found
+
+
 def test_a_new_life_remembers_where_the_last_one_ended(state):
     assert game.last_home(state) is None
     old = state.player
