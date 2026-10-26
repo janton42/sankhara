@@ -1289,6 +1289,55 @@ def test_in_a_town_families_ask_to_settle_instead(state):
     assert camp.population == before + actions.NEWCOMERS
 
 
+def test_traders_and_middens_come_only_with_a_town(state):
+    me = state.player
+    state.nation.known["market"] = True
+    for n in state.neighbours.values():
+        n.met = True
+    assert events.EVENT_DEFS["market_traders"].chance(state, me) == 0
+    assert events.EVENT_DEFS["middens"].chance(state, me) == 0
+    _settle_as(state, "town")
+    assert events.EVENT_DEFS["market_traders"].chance(state, me) > 0
+    assert events.EVENT_DEFS["middens"].chance(state, me) > 0
+
+
+def test_a_toll_on_traders_is_for_those_with_a_say(state):
+    _settle_as(state, "town")
+    for n in state.neighbours.values():
+        n.met = True
+    me = state.player  # leads, at the seat
+    traders = events.offer(
+        state, me, events.EVENT_DEFS["market_traders"].build(state, me, state.rng())
+    )
+    assert "toll_traders" in traders.answers and "trade_with_strangers" in traders.answers
+    before = state.nation.stores.get("food")
+    actions.ACTIONS["toll_traders"].effect(actions.Ctx(state, me, state.rng(), traders))
+    assert state.nation.stores.get("food") > before
+    _not_leading(state)
+    traders = events.offer(state, me, traders)
+    assert "toll_traders" not in traders.answers
+
+
+def test_middens_left_alone_can_bring_a_flux(state, monkeypatch):
+    _settle_as(state, "town")
+    me = state.player
+    _quiet(state)
+    middens = events.offer(state, me, events.EVENT_DEFS["middens"].build(state, me, state.rng()))
+    assert middens.expected and middens.answers == ["have_middens_cleared"]
+    camp = state.settlement(middens.settlement_id)
+    monkeypatch.setattr(events.say, "deciders_of", lambda s, camp_id: [me])  # no one else
+    fluxes = 0
+    for _ in range(20):
+        middens.data["taken_with"] = []
+        before = camp.population
+        if events._middens_resolve(state, middens, False, state.rng()):
+            fluxes += 1
+            assert camp.population < before
+    assert fluxes > 0
+    middens.data["taken_with"] = ["have_middens_cleared"]
+    assert events._middens_resolve(state, middens, True, state.rng()) is None
+
+
 def test_where_keepers_judge_the_leader_does_not(state):
     from sankhara.sim import say
 

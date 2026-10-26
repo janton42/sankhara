@@ -21,7 +21,7 @@ What has been built, and what comes next. The design itself is in
 From the play-test notes: choices should match the role, grow with the society,
 and not all be good.
 
-1. **Role and scale** (begun: who has a say, strangers and newcomers, judging, each food role's own matter). Each matter is put to the people it would really reach.
+1. **Role and scale** (built: who has a say, strangers and newcomers, judging, each food role's own matter, a town's own matters: traders at the market, the middens). Each matter is put to the people it would really reach.
    In a band anyone may take a stranger in; in a village the leader decides; once
    there is a council or judgement, the elders or a judge do; in a town it is no
    one's single choice, and the matter becomes something else (newcomers settling,
@@ -41,7 +41,7 @@ and not all be good.
    records (and false ones) with writing, levies of labour with walls, collecting
    (and skimming) tribute.
 
-## M5: seeing the people (next)
+## M5: seeing the people (built)
 
 1. **The web of ideas as a graph** (built): nodes and edges, the known and those the
    people are close to (faint, with their hint); nothing beyond, so nothing is
