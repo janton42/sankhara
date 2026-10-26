@@ -620,6 +620,59 @@ def _newcomers(state, char, rng):
     )
 
 
+def _in_town(state, char):
+    camp = state.settlement(char.settlement_id)
+    return camp is not None and camp.kind == "town"
+
+
+def _market_traders(state, char, rng):
+    met = [n for n in state.neighbours.values() if n.met and n.relations > -0.5]
+    if not met:
+        return None
+    n = rng.choice(met)
+    camp = state.settlement(char.settlement_id)
+    return EventInstance(
+        "market_traders",
+        f"Traders of the {n.name} have laid out their goods in the market at {camp.name}.",
+        settlement_id=camp.id,
+        data={"people": n.name, "camp": camp.name},
+    )
+
+
+MIDDEN_SICKNESS = 0.6  # the chance a town whose middens are left brings on a sickness
+
+
+def _middens(state, char, rng):
+    camp = state.settlement(char.settlement_id)
+    return EventInstance(
+        "middens",
+        f"The middens of {camp.name} have crept up to the houses, and the water tastes of them.",
+        settlement_id=camp.id,
+        data={"camp": camp.name},
+    )
+
+
+def _middens_resolve(state, event, taken, rng):
+    camp = state.settlement(event.settlement_id)
+    if camp is None:
+        return None
+    taken_with = event.data.get("taken_with", [])
+    if "have_middens_cleared" in taken_with:
+        return None
+    # others with a say may see to it, as they are inclined
+    deciders = [c for c in say.deciders_of(state, camp.id) if not c.is_player]
+    if any(rng.random() < 0.3 + tendencies.affinity(c.tendencies, ("caring",)) for c in deciders):
+        return f"{deciders_word(deciders)} set the families of {camp.name} to clear the middens."
+    chance = MIDDEN_SICKNESS * (0.5 if "clear_own_midden" in taken_with else 1.0)
+    if rng.random() >= chance:
+        return None
+    camp.population *= 1 - rng.uniform(0.02, 0.06)
+    for c in state.living():
+        if c.settlement_id == camp.id:
+            c.health -= rng.uniform(0, 15)
+    return f"A flux went through the houses of {camp.name}."
+
+
 def _others_near(state, char):
     """Grown people of other families in the player's camp."""
     return [
@@ -1286,6 +1339,22 @@ EVENTS = [
         _newcomers,
         answers=("take_in_family", "turn_away_family"),
         expects=("take_in_family", "turn_away_family"),
+        penalty=0.03,
+    ),
+    # what comes with a town
+    EventDef(
+        "market_traders",
+        lambda s, c: 0.1 if "market" in s.nation.known and _in_town(s, c) else 0.0,
+        _market_traders,
+        answers=("trade_with_strangers", "cheat_strangers", "ask_far_lands", "toll_traders"),
+    ),
+    EventDef(
+        "middens",
+        lambda s, c: 0.08 if _in_town(s, c) else 0.0,
+        _middens,
+        _middens_resolve,
+        answers=("have_middens_cleared", "clear_own_midden"),
+        expects=("have_middens_cleared",),
         penalty=0.03,
     ),
     EventDef(
