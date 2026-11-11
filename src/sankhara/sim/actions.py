@@ -675,6 +675,59 @@ def _turn_away_family(ctx):
     return "You told the newcomers there was no room for them."
 
 
+def _strangers_people(ctx):
+    who = ctx.event.data.get("people") if ctx.event else None
+    return next((n for n in ctx.state.neighbours.values() if n.name == who), None)
+
+
+def _warm_strangers(ctx, amount):
+    n = _strangers_people(ctx)
+    if n is not None:
+        n.relations = max(-1.0, min(1.0, n.relations + amount))
+
+
+def _trade_with_strangers(ctx):
+    _gain(ctx, "food", 5)
+    if "wares" in discoveries.categories(ctx.nation):
+        _gain(ctx, "wares", 2)
+    _warm_strangers(ctx, 0.03)
+    if ctx.rng.random() < 0.3:
+        _nudge_insight(ctx, "craft", 10)
+    return "You traded with the strangers, and learned how they work a thing or two."
+
+
+def _cheat_strangers(ctx):
+    _gain(ctx, "food", 12)
+    if ctx.rng.random() < FOUND_OUT:
+        _warm_strangers(ctx, -0.12)
+        _local(ctx, cohesion=-0.5)
+        return "You sold them short, and they found it out. They will tell their people."
+    return "You sold them short, and they went home none the wiser."
+
+
+def _ask_far_lands(ctx):
+    _warm_strangers(ctx, 0.02)
+    _nudge_insight(ctx, ctx.rng.choice(["land", "lore"]), 15)
+    return "You sat with the traders into the evening and asked what lies beyond their land."
+
+
+def _toll_traders(ctx):
+    camp = _event_camp(ctx)
+    ctx.nation.stores.add({"food": 6 * people_scale(ctx.state)})
+    _warm_strangers(ctx, -0.04)
+    return f"The traders paid what was asked to set out their goods at {camp.name}."
+
+
+def _have_middens_cleared(ctx):
+    camp = _event_camp(ctx)
+    _local(ctx, cohesion=0.3, camp=camp)
+    return f"Every family of {camp.name} gave a day to carrying the middens away."
+
+
+def _clear_own_midden(ctx):
+    return "You carried away the filth from before your own door, and your neighbours'."
+
+
 # --- answers: what is yours, and what is theirs -----------------------------------
 
 
@@ -2081,6 +2134,70 @@ ACTION_LIST = [
         -0.02,
         _turn_away_family,
         requires=_has_say,
+    ),
+    # what comes with a town
+    Action(
+        "trade_with_strangers",
+        "Trade with them",
+        "Food for what they have brought.",
+        (),
+        ("diligent",),
+        0.01,
+        _trade_with_strangers,
+        {"food": 4},
+    ),
+    Action(
+        "cheat_strangers",
+        "Sell them short",
+        "They will not be back for a year, if at all.",
+        (),
+        ("acquisitive",),
+        -0.03,
+        _cheat_strangers,
+        {"food": 4},
+    ),
+    Action(
+        "ask_far_lands",
+        "Ask what lies beyond",
+        "Traders go where no one else does.",
+        (),
+        ("studious", "contemplative"),
+        0.01,
+        _ask_far_lands,
+        {"hands": 1},
+    ),
+    Action(
+        "toll_traders",
+        "Ask a toll of them",
+        "The market is ours; let them pay to use it.",
+        (),
+        ("acquisitive", "ambitious"),
+        -0.01,
+        _toll_traders,
+        {"regard": 1},
+        requires=_has_say,
+    ),
+    Action(
+        "have_middens_cleared",
+        "Have the middens cleared",
+        "Every family gives a day.",
+        (),
+        ("caring", "diligent"),
+        0.03,
+        _have_middens_cleared,
+        {"regard": 2},
+        requires=_has_say,
+    ),
+    Action(
+        "clear_own_midden",
+        "Clear your own doorstep",
+        "No one else will.",
+        (),
+        ("caring", "diligent"),
+        0.02,
+        _clear_own_midden,
+        {"hands": 2},
+        requires=_no_say,
     ),
     # what is yours, and what is theirs
     Action(
