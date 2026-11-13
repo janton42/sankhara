@@ -11,12 +11,16 @@ lineage). Any role can shape the people through the people's works
 are settled. Buddhist ideas (karma, rebirth, saṅkhāra) are modelled but
 never named in-game, nor in the README, About text or other descriptions, and
 nothing says there is no winning. Design: `docs/concepts.md` (check it for new
-notes every session). Plan: `docs/plan.md` (M1-M5 built; what comes next is under
-"Later" and not yet planned in detail).
+notes every session). Work: `docs/backlog.md` lists every design (DES) with its
+phase and `docs/buglog.md` every bug (BUG); M1-M5 are built, what comes next is
+there as ideas.
 
 ## Branches
 
 - Only `main` and `develop` live long (`gh-pages` is the docs site, built by CI).
+- Commits, pushes and PRs are made as the machine account `janton42-claude`
+  (set in this repo's git config), with the Claude co-author trailer; never as
+  `janton42`.
 - New work: a branch from `develop` in its own worktree
   (`git worktree add ../sankhara-wt/<name> -b <name> develop`), a PR with
   `--base develop`; the user reviews and merges it (never merge your own PRs), then
@@ -36,6 +40,7 @@ notes every session). Plan: `docs/plan.md` (M1-M5 built; what comes next is unde
 - `src/sankhara/ui/`: Kivy only reads state and calls `sim.game` (`options`, `choose`, `affordable`, `remaining_budget`, `end_year`, `choose_form`, `begin_next_life`, `threads`); `words.py` maps numbers to words; `theme.py` palette and widgets
 - `src/sankhara/world/`: map generation and `hexgrid.py`; `constants/config.py`: map/biome/culture tunables
 - `tests/test_sim/` covers the rules; `tests/test_ui.py` drives the real widgets headless
+- `docs/backlog.md` and `docs/buglog.md` index the work; one doc per item, moved by phase: `docs/designed/`, `docs/active/`, `docs/archive/` (DES), `docs/bugfixes/open/`, `docs/bugfixes/closed/` (BUG); start from `docs/templates/`. The conventions are at the top of each index. New work starts from a row or a design doc; new play-test notes in `concepts.md` become rows
 - `docs/concepts.md` is the user's design doc (authoritative, don't rewrite it); `docs/architecture.md` maps the design to code
 
 ## Notes

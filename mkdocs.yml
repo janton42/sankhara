@@ -20,8 +20,16 @@ nav:
   - Home: index.md
   - Concepts: concepts.md
   - Architecture: architecture.md
-  - Plan: plan.md
+  - Design:
+      - Backlog: backlog.md
+      - Buglog: buglog.md
   - Development: development.md
+
+not_in_nav: |
+  /designed/
+  /active/
+  /archive/
+  /bugfixes/
 
 markdown_extensions:
   - admonition
