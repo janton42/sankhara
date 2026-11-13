@@ -8,7 +8,7 @@ hunt, gather or keep the songs. Some things take years; events arrive, some of
 them asking something of you.
 
 The ideas behind it are in [Concepts](concepts.md); how they are built is in
-[Architecture](architecture.md); what comes next is in the [Plan](plan.md).
+[Architecture](architecture.md); what is built and what comes next is in the [Backlog](backlog.md).
 
 !!! note "Status"
     Playable: a band of a few hundred people, yearly turns, multi-year
@@ -16,7 +16,7 @@ The ideas behind it are in [Concepts](concepts.md); how they are built is in
     settle on, roles that appear as the people change, and other peoples to
     meet, customs that can be changed, how the people govern themselves, and
     the families, rivals and marriages around you. What comes next is in the
-    [Plan](plan.md).
+    [Backlog](backlog.md).
 
 ## Running
 
